@@ -1,0 +1,152 @@
+[
+  {
+    "timestamp": "20251101_143433",
+    "content": "cat.jpg",
+    "style": "point.jpg",
+    "output": "styled_20251101_143433.jpg"
+  },
+  {
+    "timestamp": "20251101_144039",
+    "content": "181002113456-01-golden-gate-bridge-restricted.jpg",
+    "style": "point.jpg",
+    "output": "styled_20251101_144039.jpg"
+  },
+  {
+    "timestamp": "20251101_144524",
+    "content": "comino-swimming-snorkeling-malta.jpg",
+    "style": "point.jpg",
+    "output": "styled_20251101_144524.jpg"
+  },
+  {
+    "timestamp": "20251101_145606",
+    "content": "181002113456-01-golden-gate-bridge-restricted.jpg",
+    "style": "point.jpg",
+    "output": "styled_20251101_145606.jpg"
+  },
+  {
+    "timestamp": "20251101_150918",
+    "content": "cat.jpg",
+    "style": "point.jpg",
+    "output": "styled_20251101_150918.jpg"
+  },
+  {
+    "timestamp": "20251101_152317",
+    "content": "stanford_uni.jpg",
+    "style": "Edvard_Munch,_1893,_The_Scream,_oil,_tempera_and_pastel_on_cardboard,_91_x_73_cm,_National_Gallery_of_Norway.jpg",
+    "output": "styled_20251101_152317.jpg"
+  },
+  {
+    "timestamp": "20251101_162214",
+    "content": "181002113456-01-golden-gate-bridge-restricted.jpg",
+    "style": "pablo-picasso.jpg",
+    "output": "styled_20251101_162214.jpg"
+  },
+  {
+    "timestamp": "20251101_173552",
+    "content": "181002113456-01-golden-gate-bridge-restricted.jpg",
+    "style": "picasso_face.jpg",
+    "output": "styled_20251101_173552.jpg"
+  },
+  {
+    "timestamp": "20251101_174727",
+    "content": "garden.jpg",
+    "style": "renoir-monet.jpg",
+    "output": "styled_20251101_174727.jpg"
+  },
+  {
+    "timestamp": "20251101_175132",
+    "content": "garden.jpg",
+    "style": "point.jpg",
+    "output": "styled_20251101_175132.jpg"
+  },
+  {
+    "timestamp": "20251101_180131",
+    "content": "face.jpg",
+    "style": "point.jpg",
+    "output": "styled_20251101_180131.jpg"
+  },
+  {
+    "timestamp": "20251102_213148",
+    "content": "comino-swimming-snorkeling-malta.jpg",
+    "style": "point.jpg",
+    "output": "styled_20251102_213148.jpg"
+  },
+  {
+    "timestamp": "20251103_103829",
+    "content": "city.jpg",
+    "style": "point.jpg",
+    "output": "styled_20251103_103829.jpg"
+  },
+  {
+    "timestamp": "20251103_105443",
+    "content": "meme.jpg",
+    "style": "pablo-picasso.jpg",
+    "output": "styled_20251103_105443.jpg"
+  },
+  {
+    "timestamp": "20251103_111429",
+    "content": "181002113456-01-golden-gate-bridge-restricted.jpg",
+    "style": "george-morland_coast-scene-1792.jpg",
+    "output": "styled_20251103_111429.jpg"
+  },
+  {
+    "timestamp": "20251103_112349",
+    "content": "comino-swimming-snorkeling-malta.jpg",
+    "style": "lilies.jpg",
+    "output": "styled_20251103_112349.jpg"
+  },
+  {
+    "timestamp": "20251103_140423",
+    "content": "cat.jpg",
+    "style": "george-morland_coast-scene-1792.jpg",
+    "output": "styled_20251103_140423.jpg"
+  },
+  {
+    "timestamp": "20251104_153557",
+    "content": "comino-swimming-snorkeling-malta.jpg",
+    "style": "george-morland_coast-scene-1792.jpg",
+    "output": "styled_20251104_153557.jpg"
+  },
+  {
+    "timestamp": "20251104_181951",
+    "content": "comino-swimming-snorkeling-malta.jpg",
+    "style": "Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg",
+    "output": "styled_20251104_181951.jpg"
+  },
+  {
+    "timestamp": "20251104_182622",
+    "content": "181002113456-01-golden-gate-bridge-restricted.jpg",
+    "style": "Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg",
+    "output": "styled_20251104_182622.jpg"
+  },
+  {
+    "timestamp": "20251104_191000",
+    "content": "cat.jpg",
+    "style": "lilies.jpg",
+    "output": "styled_20251104_191000.jpg"
+  },
+  {
+    "timestamp": "20251104_204655",
+    "content": "181002113456-01-golden-gate-bridge-restricted.jpg",
+    "style": "Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg",
+    "output": "styled_20251104_204655.jpg"
+  },
+  {
+    "timestamp": "20251104_205022",
+    "content": "181002113456-01-golden-gate-bridge-restricted.jpg",
+    "style": "point.jpg",
+    "output": "styled_20251104_205022.jpg"
+  },
+  {
+    "timestamp": "20251104_205357",
+    "content": "stanford_uni.jpg",
+    "style": "pablo-picasso.jpg",
+    "output": "styled_20251104_205357.jpg"
+  },
+  {
+    "timestamp": "20251105_105750",
+    "content": "comino-swimming-snorkeling-malta.jpg",
+    "style": "point.jpg",
+    "output": "styled_20251105_105750.jpg"
+  }
+]
