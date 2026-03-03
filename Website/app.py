@@ -16,7 +16,7 @@ from datetime import datetime
 #from Image_Feature_extraction.ipynb import run_style_transfer
 
 app = Flask(__name__)
-DATASET_PATH = r'C:\Users\danie\Desktop\'\Daniela Curmi\University\Third Year\Final Year Project\Final Year Project Code Implementation\Website\paintings'
+DATASET_PATH = r'C:\Users\danie\Desktop\'\Daniela Curmi\University\Final Year Project\Final Year Project Code Implementation\Website\paintings'
 app.secret_key = "secret"  # Needed for session storage
 CORS(app)
 

@@ -166,5 +166,41 @@
     "content": "gatys_example.png",
     "style": "ion-tuculescu_butterfly-dance.jpg",
     "output": "styled_20251206_231754.jpg"
+  },
+  {
+    "timestamp": "20251210_174518",
+    "content": "comino-swimming-snorkeling-malta.jpg",
+    "style": "keith-haring_lucky-strike-1987.jpg",
+    "output": "styled_20251210_174518.jpg"
+  },
+  {
+    "timestamp": "20251210_174630",
+    "content": "gatys_example.png",
+    "style": "keith-haring_lucky-strike-1987.jpg",
+    "output": "styled_20251210_174630.jpg"
+  },
+  {
+    "timestamp": "20260225_165349",
+    "content": "alfred-sisley_the-loing-at-moret-1881.jpg",
+    "style": "gatys_example.png",
+    "output": "styled_20260225_165349.jpg"
+  },
+  {
+    "timestamp": "20260225_165528",
+    "content": "gatys_example.png",
+    "style": "ion-tuculescu_butterfly-dance.jpg",
+    "output": "styled_20260225_165528.jpg"
+  },
+  {
+    "timestamp": "20260302_185038",
+    "content": "gatys_example.png",
+    "style": "point.jpg",
+    "output": "styled_20260302_185038.jpg"
+  },
+  {
+    "timestamp": "20260302_185145",
+    "content": "gatys_example.png",
+    "style": "pablo-picasso.jpg",
+    "output": "styled_20260302_185145.jpg"
   }
 ]
