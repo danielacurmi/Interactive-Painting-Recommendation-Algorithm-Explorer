@@ -1,0 +1,6 @@
+body {
+    background-image: url("pixel_background.png");
+    background-size: cover;
+    background-position: center;
+    background-repeat: repeat;
+}
