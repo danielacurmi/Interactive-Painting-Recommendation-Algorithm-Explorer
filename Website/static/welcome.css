@@ -1,6 +1,71 @@
+html, body {
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+}
+
 body {
-    background-image: url("pixel_background.png");
+    height: 100vh;
+    width: 100vw;
+
+    background-image: url("../static/pixel_background.png");
     background-size: cover;
     background-position: center;
-    background-repeat: repeat;
+    background-repeat: no-repeat;
+
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+/* Title */
+h1 {
+    text-align: center;
+    font-size: 10vh;
+    color: #fff;
+    font-family: 'Old London', sans-serif;
+    margin: 1vh 0;
+}
+
+/* Subtitle */
+p {
+    text-align: center;
+    color: #ffffff;
+    font-family: 'Raleway', sans-serif;
+    font-size: 2.5vh;
+    margin-bottom: 2vh;
+}
+
+/* Container holding all frames */
+.frames1 {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    margin-left: 250px;
+    margin-right: 50px;
+    max-width: 90vw;
+    max-height: 60vh;
+    gap: 10px;
+}
+.frames2 {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    margin-left: 250px;
+    margin-right: 250px;
+    max-width: 90vw;
+    max-height: 60vh;
+    gap: 10px;
+}
+
+/* Individual images */
+.frames1 img {
+    width: 9vw;
+    height: auto;
+}
+.frames2 img {
+    width: 9vw;
+    height: auto;
 }

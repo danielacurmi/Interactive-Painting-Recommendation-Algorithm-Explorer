@@ -152,10 +152,10 @@ h1 {
   text-align: center;
   margin-top: 60px;
   margin-bottom: 20px;
-  font-size: 80px;
+  font-size: 100px;
   padding: 20px;
   color: #fff;
-  font-family: "UnifrakturMaguntia", cursive;
+  font-family: 'Old London', sans-serif;
 }
 
 #modalArtist {
