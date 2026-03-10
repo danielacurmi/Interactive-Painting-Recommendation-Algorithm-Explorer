@@ -49,11 +49,11 @@ def style_transfer():
     return render_template("style_transfer.html")
 
 @app.route("/welcome_page")
-def style_transfer():
+def welcome():
     return render_template("welcome_page.html")
 
 @app.route("/user_page")
-def style_transfer():
+def user():
     return render_template("user_page.html")
 
 @app.route("/api/random-images/<int:n>")
