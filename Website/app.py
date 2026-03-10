@@ -48,6 +48,14 @@ def favourites():
 def style_transfer():
     return render_template("style_transfer.html")
 
+@app.route("/welcome_page")
+def style_transfer():
+    return render_template("welcome_page.html")
+
+@app.route("/user_page")
+def style_transfer():
+    return render_template("user_page.html")
+
 @app.route("/api/random-images/<int:n>")
 def random_images(n):
     sample = random.sample(all_images, min(n, len(all_images)))

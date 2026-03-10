@@ -1,3 +1,13 @@
+@import url(https://fonts.googleapis.com/css?family=Anonymous+Pro);
+@font-face {
+    font-family: 'TheFont';
+    
+    /* Variable fonts like the one linked below allow for fine-tuned control over various font properties dynamically via CSS, such as weight ('wght'), width ('wdth'), etc. This link is where your web browser will download the font from. */
+    /* Insert the link to your custom variable font */
+    src: url("https://garet.typeforward.com/assets/fonts/shared/TFMixVF.woff2")
+      format('woff2'); 
+    }
+
 html, body {
     height: 100%;
     margin: 0;
@@ -43,7 +53,7 @@ p {
     justify-content: center;
     align-items: center;
     margin-left: 250px;
-    margin-right: 50px;
+    margin-right: 5px;
     max-width: 90vw;
     max-height: 60vh;
     gap: 10px;
@@ -53,7 +63,7 @@ p {
     flex-wrap: wrap;
     justify-content: center;
     align-items: center;
-    margin-left: 250px;
+    margin-left: 5px;
     margin-right: 250px;
     max-width: 90vw;
     max-height: 60vh;
@@ -68,4 +78,88 @@ p {
 .frames2 img {
     width: 9vw;
     height: auto;
+}
+
+/* Button Frames */
+.button-frames {
+    display: flex;
+    flex-direction: column;
+    gap: 30px;
+}
+
+.frame-button {
+    position: relative;
+}
+
+.button-frames .frame-button:nth-child(2) img {
+    width: 12vw;
+}
+
+.frame-button img {
+    width: 9vw;
+    height: auto;
+}
+
+.transparent-btn {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 75%;
+    height: 75%;
+
+    background: transparent;
+    border: none;
+    cursor:pointer;
+}
+
+/* Cursor */
+.cursor{
+    position: relative;
+    width: 24em;
+    margin: 0 auto;
+    border-right: 2px solid rgba(255, 255, 255, 0.75);
+    font-size: 2vh;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    transform: translateY(-50%);   
+    margin-top: 30px; 
+    background-color: black;
+    font-family: 'Raleway', sans-serif;
+}
+/* Animation */
+.typewriter-animation {
+  animation: 
+    typewriter 5s steps(50) 1s 1 normal both, 
+    blinkingCursor 500ms steps(50) infinite normal;
+}
+@keyframes typewriter {
+  from { width: 0; }
+  to { width: 100%; }
+}
+@keyframes blinkingCursor{
+  from { border-right-color: rgba(255, 255, 255, 0.75); }
+  to { border-right-color: transparent; }
+}
+
+.breathe-text {
+    font-family: 'TheFont';
+    font-size: clamp(2vw, 5vw, 15vh);
+    color: white;
+    text-align: center;
+    display: block;
+    margin-top: 40px;
+    margin-bottom: 10px;
+    animation: letter-breathe 3s ease-in-out infinite;
+}
+@keyframes letter-breathe {
+
+    from,
+    to {
+        font-variation-settings: 'wght' 100;
+    }
+
+    50% {
+        font-variation-settings: 'wght' 900;
+    }
 }

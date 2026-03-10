@@ -134,7 +134,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const buttons = Array.from(document.querySelectorAll('button.layered'));
     const board_buttons = Array.from(document.querySelectorAll('button.board'));
     const allButtons = buttons.concat(board_buttons);
-
+    document.querySelectorAll('.transparent-btn').forEach(btn => {
+    
+    // Button on welcome page 
+    btn.addEventListener('click', () => {
+            window.location.href = btn.dataset.href;
+        });
+    });
     allButtons.forEach(btn => {
         btn.addEventListener('click', () => {
             // Remove active from the layered buttons collection so only one shows active
