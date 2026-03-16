@@ -14,6 +14,10 @@ html, body {
     overflow: hidden;
 }
 
+footer {
+    color:#fff;
+    font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
 body {
     height: 100vh;
     width: 100vw;
@@ -34,7 +38,6 @@ h1 {
     font-size: 10vh;
     color: #fff;
     font-family: 'Old London', sans-serif;
-    margin: 1vh 0;
 }
 
 /* Subtitle */
@@ -46,58 +49,69 @@ p {
     margin-bottom: 2vh;
 }
 
-/* Container holding all frames */
-.frames1 {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    align-items: center;
-    margin-left: 250px;
-    margin-right: 5px;
-    max-width: 90vw;
-    max-height: 60vh;
-    gap: 10px;
-}
-.frames2 {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    align-items: center;
-    margin-left: 5px;
-    margin-right: 250px;
-    max-width: 90vw;
-    max-height: 60vh;
-    gap: 10px;
+.gallery{
+    position: relative;
+    width: 90vw;
+    height: 65vh;
+    margin: auto;
 }
 
-/* Individual images */
-.frames1 img {
-    width: 9vw;
+.gallery > img{
+    position: absolute;
     height: auto;
 }
-.frames2 img {
-    width: 9vw;
-    height: auto;
+
+.p1{ width:9vw; top:8vh; left:15vw; }
+.p2{ width:9vw; top:2vh; left:25vw; }
+
+.p3{ width:10vw; top:10vh; right:27vw; }
+.p4{ width:14vw; top:6vh; right:12vw; }
+
+.create{
+    position:absolute;
+    top:0vh;
+    left:50%;
+    transform:translateX(-50%);
 }
+
+.create img{
+    width:13vw;
+}
+
+.tutorial{
+    position:absolute;
+    top:20vh;
+    left:52%;
+    transform:translateX(-50%);
+}
+
+.tutorial img{
+    width:9vw;
+}
+
+.gallery .s1{ width:18vw; bottom:2vh; left:10vw; }
+.gallery .s2{ width:10vw; bottom:2vh; left:29vw; }
+.gallery .s3{ width:13vw; bottom:0vh; left:39vw; }
+
+.gallery .s4{ width:7vw; bottom:27vh; right:49vw; }
+.gallery .s5{ width:10vw; bottom:10vh; right:27vw; }
+.gallery .s6{ width:11vw; bottom:10vh; right:14vw; }
+
+/*.gallery .s7{ width:8vw; bottom:58vh; left:21%; transform:translateX(-50%); }*/
 
 /* Button Frames */
 .button-frames {
+    align-items: center;
     display: flex;
     flex-direction: column;
     gap: 30px;
+    padding-left: 10px;
+    padding-right: 10px;
 }
 
-.frame-button {
-    position: relative;
-}
-
-.button-frames .frame-button:nth-child(2) img {
-    width: 12vw;
-}
-
-.frame-button img {
-    width: 9vw;
-    height: auto;
+.button-frames .frame-button:nth-child(1) img {
+    padding-top: 20px;
+    width: 13vw;
 }
 
 .transparent-btn {
@@ -148,7 +162,6 @@ p {
     text-align: center;
     display: block;
     margin-top: 40px;
-    margin-bottom: 10px;
     animation: letter-breathe 3s ease-in-out infinite;
 }
 @keyframes letter-breathe {
