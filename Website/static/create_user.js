@@ -12,7 +12,7 @@ window.onload = function () {
 /* Call backend to check whether the current IP exists */
 async function checkUser() {
     try {
-        const response = await fetch('/check_user');
+        const response = await fetch('/api/check_user');
         const data = await response.json();
 
         if (data.exists === true) {
@@ -43,16 +43,16 @@ document.addEventListener("DOMContentLoaded", function () {
 
 /* User clicks accept consent */
 async function acceptConsent() {
-    const checkbox = document.getElementById("consent-checkbox");
-    const errorText = document.getElementById("consent-error");
+    // const checkbox = document.getElementById("consent-checkbox");
+    // const errorText = document.getElementById("consent-error");
 
-    if (!checkbox.checked) {
-        errorText.style.display = "block";
-        return;
-    }
+    // if (!checkbox.checked) {
+    //     errorText.style.display = "block";
+    //     return;
+    // }
 
     try {
-        const response = await fetch('/create_user', {
+        const response = await fetch('/api/create_user', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -73,4 +73,16 @@ async function acceptConsent() {
 /* Redirect user to main page */
 function redirectToHome() {
     window.location.href = "/index";
+}
+
+// Decline / Exit Button
+document.addEventListener("DOMContentLoaded", function () {
+    const declineButton = document.getElementById("decline-consent-btn");
+    if (declineButton) {
+        declineButton.addEventListener("click", declineConsent);
+    }
+});
+
+async function declineConsent() {
+    window.location.href = "/";
 }

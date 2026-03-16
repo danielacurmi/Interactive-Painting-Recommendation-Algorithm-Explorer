@@ -76,7 +76,7 @@ def serve_image(filename):
 def get_db_connection():
     conn = psycopg2.connect(
         host="localhost",
-        database="ART_RECSYS_",
+        database="ART_RECSYS_DB",
         user="postgres",
         password="Catmelon304!"
     )

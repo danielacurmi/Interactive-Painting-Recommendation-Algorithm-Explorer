@@ -16,10 +16,11 @@ html, body {
 
 footer {
     position: fixed;
-    margin-top:42%;
-    background-color: #00000035;
+    margin-top:43%;
+    background-color: #00000059;
     color:#fff;
     font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-size: small;
 }
 body {
     height: 100vh;
