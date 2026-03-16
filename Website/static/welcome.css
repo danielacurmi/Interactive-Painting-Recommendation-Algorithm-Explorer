@@ -15,6 +15,9 @@ html, body {
 }
 
 footer {
+    position: fixed;
+    margin-top:42%;
+    background-color: #00000035;
     color:#fff;
     font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
@@ -34,8 +37,9 @@ body {
 
 /* Title */
 h1 {
+    margin-top: 10px;
     text-align: center;
-    font-size: 10vh;
+    font-size: 13vh;
     color: #fff;
     font-family: 'Old London', sans-serif;
 }
@@ -50,10 +54,10 @@ p {
 }
 
 .gallery{
-    position: relative;
+    position: fixed;
     width: 90vw;
     height: 65vh;
-    margin: auto;
+    margin: 9%;
 }
 
 .gallery > img{

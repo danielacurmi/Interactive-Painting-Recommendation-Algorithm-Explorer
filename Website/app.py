@@ -12,6 +12,7 @@ import torch.optim as optim
 from torchvision import transforms, models
 from PIL import Image
 from datetime import datetime
+import psycopg2
 
 #from Image_Feature_extraction.ipynb import run_style_transfer
 
@@ -20,10 +21,10 @@ DATASET_PATH = r'C:\Users\danie\Desktop\_\Daniela Curmi\University\Final Year Pr
 app.secret_key = "secret"  # Needed for session storage
 CORS(app)
 
+# Move to Database
 FAVOURITES_FILE = "favourites.json"
 GENERATED_FILE = "generated_art.json"
 
-# TO-DO: replace with a DB ?
 all_images = [] # Collect all images
 
 for root, dirs, files in os.walk(DATASET_PATH):
@@ -33,12 +34,12 @@ for root, dirs, files in os.walk(DATASET_PATH):
             all_images.append(rel_path.replace("\\", "/"))
 
 @app.route("/")
-def index():
-    return render_template("index.html")
+def welcome():
+    return render_template("welcome_page.html")
 
-@app.route("/create")
-def create_board():
-    return render_template("create_board.html")
+@app.route("/create_gallary")
+def create_gallary():
+    return render_template("create_gallary.html")
 
 @app.route("/favourites")
 def favourites():
@@ -48,13 +49,17 @@ def favourites():
 def style_transfer():
     return render_template("style_transfer.html")
 
-@app.route("/welcome_page")
-def welcome():
-    return render_template("welcome_page.html")
+@app.route("/index")
+def index():
+    return render_template("index.html")
 
 @app.route("/user_page")
-def user():
+def user_page():
     return render_template("user_page.html")
+
+@app.route("/cold_start")
+def cold_start():
+    return render_template("cold_start.html")
 
 @app.route("/api/random-images/<int:n>")
 def random_images(n):
@@ -65,6 +70,130 @@ def random_images(n):
 def serve_image(filename):
     return send_from_directory(DATASET_PATH, filename)
 
+# -----------------------------
+# DATABASE CONNECTION
+# -----------------------------
+def get_db_connection():
+    conn = psycopg2.connect(
+        host="localhost",
+        database="ART_RECSYS_",
+        user="postgres",
+        password="Catmelon304!"
+    )
+    return conn
+
+# -----------------------------
+# HELPER FUNCTIONS
+# -----------------------------
+def get_user_ip():
+    """
+    Retrieve user's IP address from the request
+    """
+    # Handles proxy situations
+    if request.headers.get('X-Forwarded-For'):
+        ip = request.headers.get('X-Forwarded-For').split(',')[0]
+    else:
+        ip = request.remote_addr
+    return ip
+
+def generate_user_id():
+    """
+    Generate a sequential user ID of format U1, U2, U3, ...
+    based on the last user in the database.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Find the maximum numeric part of existing user IDs
+    query = """
+        SELECT user_id
+        FROM users
+        WHERE user_id ~ '^U[0-9]+$'
+        ORDER BY CAST(SUBSTRING(user_id FROM 2) AS INTEGER) DESC
+        LIMIT 1
+    """
+    cursor.execute(query)
+    result = cursor.fetchone()
+
+    if result:
+        last_id = result[0]            # e.g., "U21"
+        number = int(last_id[1:])      # get numeric part
+        next_number = number + 1
+    else:
+        next_number = 1                 # first user
+
+    new_user_id = f"U{next_number}"
+
+    cursor.close()
+    conn.close()
+
+    return new_user_id
+
+# -----------------------------
+# CHECK USER ENDPOINT
+# -----------------------------
+@app.route("/api/check_user", methods=["GET"])
+def check_user():
+    """
+    Determine if user IP already exists in database
+    """
+
+    ip_address = get_user_ip()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    query = """
+        SELECT user_id
+        FROM users
+        WHERE ip_address = %s
+        LIMIT 1
+    """
+
+    cursor.execute(query, (ip_address,))
+    result = cursor.fetchone()
+
+    cursor.close()
+    conn.close()
+
+    if result:
+        return jsonify({"exists": True})
+
+    else:
+        return jsonify({"exists": False})
+
+
+# -----------------------------
+# CREATE USER ENDPOINT
+# -----------------------------
+@app.route("/api/create_user", methods=["POST"])
+def create_user():
+    """
+    Create new user after consent accepted
+    """
+    ip_address = get_user_ip()
+    user_id = generate_user_id()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    insert_query = """
+        INSERT INTO users
+        (user_id, ip_address, consent_form, created_at)
+        VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+    """
+
+    cursor.execute(insert_query, (user_id, ip_address, True))
+
+    conn.commit()
+
+    cursor.close()
+    conn.close()
+
+    return jsonify({
+        "success": True,
+        "user_id": user_id
+    })
 
 # Make sure the file exists
 if not os.path.exists(FAVOURITES_FILE):
@@ -188,7 +317,7 @@ def style_transfer_api():
         show_progress=True
     )
 
-    # (Optional) save info to JSON log
+    # Save info to JSON log
     json_path = os.path.join(GENERATED_DIR, "created_art.json")
     entry = {"timestamp": timestamp,
              "content": content_file.filename,
@@ -523,6 +652,6 @@ def run_style_transfer(content_img_path, style_img_path,
 
     return output_path
 
-# TO-RUN: python app,py
+# TO-RUN: python app.py
 if __name__ == "__main__":
     app.run(debug=True)

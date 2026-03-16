@@ -18,7 +18,8 @@
     <title>Welcome Page</title>
 </head>
 <body>
-    <span class="breathe-text">Welcome</span>
+    <!--<span class="breathe-text">Welcome</span>-->
+    <h1>Welcome</h1>
     <div> 
         <!--<p class="cursor typewriter-animation"> Before Creating a User, Click on the Tutorial below...</p>-->
     </div>
@@ -30,7 +31,7 @@
 
         <div class="frame-button create">
             <img src="../static/frame8.png">
-            <a class="transparent-btn" href="user_page.html"></a>
+            <button class="transparent-btn" data-href="{{ url_for('user_page') }}"></button>
         </div>
 
         <div class="frame-button tutorial">

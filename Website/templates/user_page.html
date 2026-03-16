@@ -12,18 +12,112 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fascinate&family=UnifrakturMaguntia&display=swap" rel="stylesheet">
-    
+    <link href="https://fonts.cdnfonts.com/css/old-london" rel="stylesheet">
+
     <link rel="stylesheet" href="../static/welcome.css">
+    <link rel="stylesheet" href="../static/loader_1.css">
+    <script src="../static/create_user.js" defer></script>
     <script src="../static/scripts.js" defer></script>
 
     <title>Create User</title>
 </head>
-
 <body>
-    <!-- Create user, with user id, save to database -->
-    <p class="cursor typewriter-animation">Loading...</p>
+    <h1>Create User</h1>
+    <div id="loader">
+        <p>Checking user...</p>
+    </div>
+
+    <!-- Consent form container (hidden until needed) -->
+    <div id="consent-container" style="display:none;">
+        <h2>Website User Participation Consent Form</h2>
+        <hr>
+        <p><strong>FYP Title:</strong> Interactive Painting Recommendation Algorithm Explorer</p>
+        <p><strong>Researcher:</strong> Daniela Curmi, Faculty of Information & Communication Technology, Department of Artificial Intelligence</p>
+        <p><strong>Email:</strong> daniela.curmi.23@um.edu.mt</p>
+        <p><strong>Mobile No.:</strong> +356 7940 5143</p>
+        <p><strong>Supervisor:</strong> Dr Dylan Seychell</p>
+        <p><strong>Email:</strong> dylan.seychell@um.edu.mt</p>
+        <hr>
+        <h3>Purpose of the Study</h3>
+        <p>
+            You are invited to participate in a research study on content-based artwork recommendation using the WikiArt dataset. A recommendation system can automatically adapt content to each individual’s personal preferences. Two common approaches are content-based filtering and collaborative filtering. Content-based filtering is a recommendation system approach that suggests items (in this case paintings) similar to those the user liked in the past based on specific features (e.g. artist, style, genre, colour scheme, etc...). On the other hand, collaborative filtering recommends paintings that are preferred by users with similar taste profiles, based on the users’ interaction with items. 
+
+            This Final Year Project implements a content-based filtering approach. Therefore, paintings will be recommended based on the features of artworks that a user has previously indicated they like. To determine user preferences, both implicit and explicit feedback will be collected. This feedback allows the system to iteratively refine and personalise future recommendations, improving their relevance to each individual user. The recommendation system is presented as a website with an interface similar to widely used social media platforms (e.g., Pinterest). As part of evaluating the system’s performance, the collected user feedback will be analysed to examine how participants interact with the online art recommendation platform. This analysis will help determine which recommendations were most effective or meaningful, as well as assess the overall quality of the system’s recommendations. This means that by using the website the user is providing data including the time spent viewing a painting, click streams, liked/disliked paintings, as well as painting ratings and reviews. However, a more detailed explanation of how and what user data is collected will be discussed in the following sections. 
+
+            Additionally, by using the Create Your Own Art function of the website (Create Tab → Create Art Section → Create Your Own Art Page), the user can upload a photo and painting of choice to create a new painting based on the photo using the art style of the painting uploaded. Then the generated painting will be added to the dataset and subject to recommendation on the Home page for all the users viewing the website. 
+
+            Overall, the purpose of this study is to gain insights into user preferences and interaction behaviour, which will help improve the design and effectiveness of the artwork recommender system.
+        </p>
+        <h3>What Participation Involves</h3>
+        <p>
+            Participation in this study is expected to take approximately 5-10 minutes, which should be sufficient to gather a meaningful amount of user feedback per user. The user will need to access and use the website to browse and interact with artworks. As mentioned earlier, participants will be required to provide implicit feedback, such as click streams and per painting viewing time which are passively collected through system tracking. This means that data is collected without the user actively choosing to provide feedback and is gathered continuously throughout the entire period during which the user is using the website. This approach offers a seamless user experience and behavioural insight, however it’s usually less precise, because interest is inferred rather than directly stated. Hence, it’s paired with explicit feedback, such as star ratings, favourite/not interested symbol, optionally submitting reviews or save to gallery, which involves active user engagement. Such feedback provides clear, intentional signals about user preferences but requires direct user input. Such interactive feedback will be collected, allowing users to immediately indicate whether they liked or disliked recommended artworks, thereby providing relevance judgments that support iterative refinement to the recommendations made to that user in particular. 
     
-    <!-- Paintings with year, genre, art style, ... , for cold-start-->
+            As mentioned in the previous section, the generated images (from the Create Your Own Art function) will form part of the artwork dataset, making these images subject to recommendation for all the website users. So, it’s important that any photos uploaded for generation don’t include sensitive content (e.g., faces, number plates, etc...), or else they will be removed. 
+        </p>
+        <h3>Data Collection and Use</h3>
+        <p>
+            Participants’ identities will not be recorded at any stage of the research, hence all data, including consent forms and user feedback from the website, will be anonymous and no identifying information will be collected (e.g. name, email, etc...). All data collected through the website will be anonymous at the point of collection, and will be stored/retrieved/deleted from a Database only accessible by myself. No information will be collected beyond what is strictly necessary for the study (i.e. implicit and explicit user feedback as well as AI generated images by the user). Hence, only the resulting AI generated painting will be stored within the dataset, meaning any uploaded reference photos/paintings will be discarded upon creation of the new painting. 
+
+            User interaction data and feedback will be stored in digital form (i.e. the Database) and used solely for research purposes. Hence, the database will include columns representing different types of feedback (e.g. likes, time spent viewing a painting, etc...). Each row will correspond to a specific painting-user interaction and will record the relevant feedback values alongside an anonymised user identifier (e.g. User 21), thereby preserving participant anonymity while still allowing all interactions associated with a given user to be tracked.
+
+            Since this recommender system is content-based, meaning that recommendations are generated based on paintings with similar features rather than users with similar taste profiles, the feedback collected will be used solely to refine per-user recommendations and to support the overall analysis and detailed evaluation of user preferences across all website users. Participation is entirely voluntary, and you may withdraw at any time without penalty.
+        </p>
+        <h3>Potential Benefits</h3>
+        <p>
+            Recommender systems are used in everyday life, such as when browsing social media platforms like Instagram, TikTok, YouTube, online shopping, etc.... Hence, this project will increase awareness of how user-provided data is collected, represented, and utilised within recommendation algorithms, as well as how such data influences personalised content delivery. Due to the increasing popularity of recommendation systems, raising awareness of how they operate and the effects of passive content consumption can encourage users to engage more critically with digital platforms and make more informed decisions about their online interactions and data sharing.
+            
+            By interacting with the system, participants gain insight into the trade-offs between personalisation, diversity, and transparency, creating more informed and critical engagement with recommender systems. At a broader societal level, the project contributes to discussions on responsible and explainable recommender systems, supporting the development of more transparent systems.
+        </p>
+        <h3>Voluntary Participation and Withdrawal</h3>
+        <p>
+            Participation in this study is entirely voluntary, you are under no obligation to take part, and choosing not to participate will not result in any penalty. If you decide to participate, you remain free to withdraw from the study at any time without providing a reason. In addition, you may request the deletion of your data at any point after submission. Upon receiving such a request, all identifiable and associated interaction data linked to your anonymised user ID will be permanently removed from the research database.
+        </p>
+        <hr>
+        <p>
+            By clicking “I Agree” below, you acknowledge that:
+            <ul>
+                <li>You have read and understood the information letter provided.</li>
+                <li>You understand what participation involves, including the collection of implicit and explicit interaction data, and how it is used and collected.</li>
+                <li>You understand how your anonymised data will be stored and used for research purposes only.</li>
+                <li>You understand that AI-generated images you create may be added to the shared dataset and recommended to other users.</li>
+                <li>You confirm that any images you upload do not contain sensitive or identifying content (e.g. faces, number plates, private information).</li>
+                <li>You are voluntarily agreeing to participate in this study.</li>
+                <li>You understand that you may withdraw at any time and request deletion of your data without penalty.</li>
+                <li>You are at least 18 years old.</li>
+            </ul>
+        </p>
+        <hr>
+        <!-- Accept/Decline Consent Form -->
+        <label>
+            <input type="checkbox" id="consent-checkbox">
+            I Agree and wish to participate.
+        </label>
+
+        <br><br>
+
+        <div>
+            <button id="accept-consent-btn" style="color:rgb(255, 213, 0);">
+                Accept and Continue.
+            </button>
+            <!-- Error message if checkbox not selected -->
+            <p id="consent-error" style="color:rgb(172, 0, 0); display:none;">
+                You must accept the consent form to continue.
+            </p>
+        </div>
+
+        <button id="decline-consent-btn" style="color:rgb(255, 213, 0);">
+            I Do Not Agree / Exit.
+        </button>
+    </div>
+    <!--Create user, with user id, save to database-->
+
+    <!--<p class="cursor typewriter-animation">Loading...</p>-->
+    
+    <!-- If New User then load a page of painting frames with random year, genre, art style, ... , 
+     inside of the frames for cold-start-->
 
     <!-- Go to home page when ready -->
 </body>
+<footer>
+    University of Malta, Faculty of Information and Communication Technology, Department of Artificial Intelligence, Daniela Curmi
+</footer>

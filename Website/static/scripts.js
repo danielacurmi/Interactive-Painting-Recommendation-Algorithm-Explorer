@@ -135,7 +135,9 @@ document.addEventListener("DOMContentLoaded", () => {
     // Select both types of buttons and attach the same click behavior
     const buttons = Array.from(document.querySelectorAll('button.layered'));
     const board_buttons = Array.from(document.querySelectorAll('button.board'));
-    const allButtons = buttons.concat(board_buttons);
+    const welcome_buttons = Array.from(document.querySelectorAll('transparent-btn'));
+    const subButtons = buttons.concat(board_buttons);
+    const allButtons = subButtons.concat(welcome_buttons);
 
     allButtons.forEach(btn => {
         btn.addEventListener('click', () => {
