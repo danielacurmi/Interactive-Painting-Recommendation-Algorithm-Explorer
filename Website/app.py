@@ -96,38 +96,7 @@ def get_user_ip():
         ip = request.remote_addr
     return ip
 
-def generate_user_id():
-    """
-    Generate a sequential user ID of format U1, U2, U3, ...
-    based on the last user in the database.
-    """
-    conn = get_db_connection()
-    cursor = conn.cursor()
 
-    # Find the maximum numeric part of existing user IDs
-    query = """
-        SELECT user_id
-        FROM users
-        WHERE user_id ~ '^U[0-9]+$'
-        ORDER BY CAST(SUBSTRING(user_id FROM 2) AS INTEGER) DESC
-        LIMIT 1
-    """
-    cursor.execute(query)
-    result = cursor.fetchone()
-
-    if result:
-        last_id = result[0]            # e.g., "U21"
-        number = int(last_id[1:])      # get numeric part
-        next_number = number + 1
-    else:
-        next_number = 1                 # first user
-
-    new_user_id = f"U{next_number}"
-
-    cursor.close()
-    conn.close()
-
-    return new_user_id
 
 # -----------------------------
 # CHECK USER ENDPOINT
@@ -137,32 +106,30 @@ def check_user():
     """
     Determine if user IP already exists in database
     """
+    try:
+        ip_address = get_user_ip()
 
-    ip_address = get_user_ip()
+        conn = get_db_connection()
+        cursor = conn.cursor()
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
+        query = """
+            SELECT user_id
+            FROM users
+            WHERE ip_address = %s
+        """
 
-    query = """
-        SELECT user_id
-        FROM users
-        WHERE ip_address = %s
-        LIMIT 1
-    """
+        cursor.execute(query, (ip_address,))
+        result = cursor.fetchone()
 
-    cursor.execute(query, (ip_address,))
-    result = cursor.fetchone()
+        cursor.close()
+        conn.close()
 
-    cursor.close()
-    conn.close()
+        return jsonify({"exists": bool(result)})
 
-    if result:
-        return jsonify({"exists": True})
-
-    else:
-        return jsonify({"exists": False})
-
-
+    except Exception as e:
+        print("ERROR in /api/check_user:", e)
+        return jsonify({"error": str(e)}), 500
+    
 # -----------------------------
 # CREATE USER ENDPOINT
 # -----------------------------
@@ -171,29 +138,36 @@ def create_user():
     """
     Create new user after consent accepted
     """
-    ip_address = get_user_ip()
-    user_id = generate_user_id()
+    try:
+        ip_address = get_user_ip()
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
+        conn = get_db_connection()
+        cursor = conn.cursor()
 
-    insert_query = """
-        INSERT INTO users
-        (user_id, ip_address, consent_form, created_at)
-        VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
-    """
+        insert_query = """
+            INSERT INTO users (consent_form, ip_address)
+            VALUES (%s, %s)
+            RETURNING user_id
+        """
 
-    cursor.execute(insert_query, (user_id, ip_address, True))
+        cursor.execute(insert_query, (True, ip_address))
+        user_id = cursor.fetchone()[0]
+        conn.commit()
 
-    conn.commit()
+        cursor.close()
+        conn.close()
 
-    cursor.close()
-    conn.close()
+        return jsonify({
+            "success": True,
+            "user_id": user_id
+        })
 
-    return jsonify({
-        "success": True,
-        "user_id": user_id
-    })
+    except Exception as e:
+        print("ERROR in /api/create_user:", e)
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
 
 # Make sure the file exists
 if not os.path.exists(FAVOURITES_FILE):

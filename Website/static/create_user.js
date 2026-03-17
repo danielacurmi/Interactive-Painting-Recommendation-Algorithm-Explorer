@@ -29,8 +29,11 @@ async function checkUser() {
 
 /* Display consent form */
 function showConsentForm() {
-    document.getElementById("loading-container").style.display = "none";
-    document.getElementById("consent-container").style.display = "block";
+    const loader = document.getElementById("loader");
+    const modal = document.getElementById("consent-modal");
+
+    if (loader) loader.style.display = "none";
+    if (modal) modal.style.display = "flex";
 }
 
 /* Consent button click handler */
@@ -59,7 +62,13 @@ async function acceptConsent() {
             }
         });
 
+        if (!response.ok) {
+            const text = await response.text();
+            console.error("Server error:", text);
+            return;
+        }
         const result = await response.json();
+        
         if (result.success === true) {
 
             redirectToHome();
