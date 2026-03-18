@@ -96,8 +96,6 @@ def get_user_ip():
         ip = request.remote_addr
     return ip
 
-
-
 # -----------------------------
 # CHECK USER ENDPOINT
 # -----------------------------
@@ -168,6 +166,97 @@ def create_user():
             "success": False,
             "error": str(e)
         }), 500
+
+# -----------------------------
+# SESSION 
+# -----------------------------
+@app.route("/api/create_session", methods=["POST"])
+def create_session():
+    try:
+        data = request.get_json()
+        user_id = data.get("user_id")
+
+        if not user_id:
+            return jsonify({
+                "success": False,
+                "error": "user_id is required"
+            }), 400
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        insert_query = """
+            INSERT INTO sessions (user_id, session_start)
+            VALUES (%s, CURRENT_TIMESTAMP)
+            RETURNING session_id
+        """
+
+        cursor.execute(insert_query, (user_id,))
+        session_id = cursor.fetchone()[0]
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return json({
+            "success": True,
+            "session_id": session_id
+        })
+    except Exception as e:
+        print("ERROR in /api/create_session:", e)
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+    
+@app.route("/api/end_session", methods=["POST"])
+def end_session():
+    try:
+        data = request.get_json()
+        session_id = data.get("session_id")
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        update_query = """
+            UPDATE sessions
+            SET session_end = CURRENT_TIMESTAMP
+            WHERE session_id = %s
+        """
+
+        cursor.execute(update_query, (session_id,))
+        conn.commit()
+
+        cursor.close()
+        conn.close()
+
+        return jsonify({"success": True})
+
+    except Exception as e:
+        print("ERROR in /api/end_session:", e)
+        return jsonify({"success": False, "error": str(e)}), 500
+    
+# -----------------------------
+# INTERACTION EVENTS LOGGING
+# -----------------------------
+@app.route("/api/interaction_event_logging", methods=["GET"])
+def interaction_event_logging():
+    a = "hello"
+    return a
+
+# -----------------------------
+# INTERACTION SUMMARY 
+# -----------------------------
+@app.route("/api/interaction_event_summary", methods=["GET"])
+def interaction_event_summary():
+    a = "hello"
+    return a
+
+#interaction_events
+#interaction_summary 
+
+#event_id, session_id, painting_id, event_type, event_value
+
 
 # Make sure the file exists
 if not os.path.exists(FAVOURITES_FILE):
@@ -313,7 +402,6 @@ def style_transfer_api():
 def download_file(filename):
     return send_file(os.path.join(GENERATED_DIR, filename), as_attachment=True)
 
-
 def extract_visual_features(image_rgb):
     # K-Means clustering to find the most popular colours - extract a colour palette
     k=10 
@@ -361,102 +449,6 @@ def extract_visual_features(image_rgb):
     print("Palette type:", palette_type)
 
     return palette, palette_type    
-
-def extract_texture_features(image_rgb):
-    # every pixel compared with 8 neighbours in a 1 pixel radius 
-    def extract_lbp_features(image, neighbours=8, radius=1):
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        lbp = local_binary_pattern(gray, neighbours, radius, method="uniform")
-        
-        # histogram of LBP
-        hist, _ = np.histogram(lbp.ravel(),
-                                bins=np.arange(0, neighbours + 3),
-                                range=(0, neighbours + 2))
-        hist = hist.astype("float")
-        hist /= hist.sum()  
-        
-        plt.figure(figsize=(8,4))
-        plt.bar(range(len(hist)), hist, tick_label=range(len(hist)), color="gray")
-        plt.title(f"LBP Histogram (Neighbours={neighbours}, Radius={radius})")
-        plt.xlabel("LBP Pattern")
-        plt.ylabel("Normalized Frequency")
-        plt.show()
-        
-        return hist, lbp
-
-    # plot the histogram, visualize the LBP image and print feature vector
-    hist, lbp_image = extract_lbp_features(image_rgb)
-    plt.imshow(lbp_image, cmap="gray")
-    plt.title("LBP Image")
-    plt.axis("off")
-    plt.show()
-    print ("LBP feature vector: \n", hist, "\n")
-
-    # produces a texture profile of the image across multiple orientations and scales
-    def extract_gabor_features(image, k=31):
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        features = []
-        
-        # define gabor parameters i.e. orientations(theta), scales(sigma), wavelengths(lamda)
-        for theta in (0, np.pi/4, np.pi/2, 3*np.pi/4):  
-            for sigma in (1, 3):  
-                for lamda in (np.pi/4, np.pi/2):  
-                    kernel = cv2.getGaborKernel((k, k), sigma, theta, lamda, 0.5, 0, ktype=cv2.CV_32F)
-                    fimg = cv2.filter2D(gray, cv2.CV_8UC3, kernel)
-                    features.append(round(fimg.mean(), 3))
-                    features.append(round(fimg.var(), 3))
-        return np.array(features)
-
-    gabor_features = extract_gabor_features(image_rgb)
-    print("Gabor Features (mean & variance per filter, length={}): \n".format(len(gabor_features)), gabor_features, "\n")
-
-    # decompose image into different frequency bands using discrete wavelet transform with haar wavlet
-    def extract_wavelet_features(image, wavelet="haar"):
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        coeffs2 = pywt.dwt2(gray, wavelet)
-        LL, (LH, HL, HH) = coeffs2
-        
-        # mean and variance of each band
-        features = [
-            LL.mean(), LL.var(),
-            LH.mean(), LH.var(),
-            HL.mean(), HL.var(),
-            HH.mean(), HH.var()
-        ]
-        return np.array(features)
-    wavelet_features = extract_wavelet_features(image_rgb, wavelet="haar")
-    print("Wavelet Features (mean & variance for LL, LH, HL, HH): \n", wavelet_features, "\n")
-
-    # value to describe the complexity of a fractal pattern 
-    def fractal_dimension(image, threshold=128):
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        
-        # binarize
-        _, bw = cv2.threshold(gray, threshold, 255, cv2.THRESH_BINARY)
-        bw = bw // 255
-        
-        def boxcount(Z, k):
-            S = np.add.reduceat(
-                np.add.reduceat(Z, np.arange(0, Z.shape[0], k), axis=0),
-                                np.arange(0, Z.shape[1], k), axis=1)
-            return len(np.where((S > 0) & (S < k*k))[0])
-
-        # sizes of boxes
-        p = min(bw.shape)
-        n = 2**np.floor(np.log(p)/np.log(2))
-        n = int(n)
-        sizes = 2**np.arange(int(np.log(n)/np.log(2)), 1, -1)
-
-        counts = []
-        for size in sizes:
-            counts.append(boxcount(bw, size))
-
-        # fit log-log
-        coeffs = np.polyfit(np.log(sizes), np.log(counts), 1)
-        return -coeffs[0]  
-
-    fd = fractal_dimension(image_rgb)
-    print("Fractal Dimension:", fd, "\n")
 
 # Neural Style Transfer
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
