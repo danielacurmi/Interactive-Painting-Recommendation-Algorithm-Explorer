@@ -16,6 +16,7 @@
   <link href="https://fonts.cdnfonts.com/css/old-london" rel="stylesheet">
   
   <link rel="stylesheet" href="../static/styles.css">
+  <link rel="stylesheet" href="../static/loader_4.css">
   <script src="../static/scripts.js" defer></script>
   <script src="../static/style_transfer.js" defer></script>
 </head>
@@ -111,10 +112,16 @@
     </div>
   </div>
 
-  <!-- loader spinner -->
+  <!-- loader -->
   <div id="overlay" class="overlay" aria-hidden="true">
     <div style="text-align:center; color:#e6eef8;">
-      <div class="spinner" role="status" aria-label="Processing"></div>
+      <div class="spinner" role="status" aria-label="Processing">
+        <div class="dino-loader">
+          <div class="dino-runner"></div>
+          <div class="dino-obstacle"></div>
+          <div class="dino-ground"></div>
+        </div>
+      </div>
       <div style="margin-top:12px;">Generating stylized image…</div>
     </div>
   </div>

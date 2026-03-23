@@ -80,13 +80,13 @@ async function createSession() {
 
 /* User clicks accept consent */
 async function acceptConsent() {
-    // const checkbox = document.getElementById("consent-checkbox");
-    // const errorText = document.getElementById("consent-error");
+    const checkbox = document.getElementById("consent-checkbox");
+    const errorText = document.getElementById("consent-error");
 
-    // if (!checkbox.checked) {
-    //     errorText.style.display = "block";
-    //     return;
-    // }
+    if (!checkbox.checked) {
+         errorText.style.display = "block";
+         return;
+     }
 
     try {
         const response = await fetch('/api/create_user', {

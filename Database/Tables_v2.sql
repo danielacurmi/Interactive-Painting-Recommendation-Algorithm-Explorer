@@ -24,7 +24,9 @@ CREATE TABLE paintings (
 
 CREATE TABLE users (
      user_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+     consent_form BOOLEAN DEFAULT FALSE,
+     ip_address ip_address INET
 );
 
 CREATE TABLE sessions (

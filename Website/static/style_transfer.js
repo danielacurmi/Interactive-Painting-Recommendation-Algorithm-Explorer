@@ -1,7 +1,5 @@
 document.addEventListener("DOMContentLoaded", function () {
-    /* -------------------------
-    -- Helper: DOM references --
-    ------------------------- */
+    /* DOM references */
     const contentDrop = document.getElementById('contentDrop');
     const styleDrop = document.getElementById('styleDrop');
     const contentInput = document.getElementById('contentInput');
@@ -23,15 +21,11 @@ document.addEventListener("DOMContentLoaded", function () {
     const jsonArea = document.getElementById('jsonArea');
     const downloadJsonBtn = document.getElementById('downloadJsonBtn');
 
-    /* -------------------------
-    State
-    ------------------------- */
+    /* State */
     let contentFile = null;
     let styleFile = null;
 
-    /* -------------------------
-    Drag & drop helpers
-    ------------------------- */
+    /* Drag & drop helpers */
     function preventDefault(e) { e.preventDefault(); e.stopPropagation(); }
     ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(evt => {
         contentDrop.addEventListener(evt, preventDefault, false);
@@ -67,9 +61,7 @@ document.addEventListener("DOMContentLoaded", function () {
         if (f) handleFile(f, 'style');
     });
 
-    /* -------------------------
-    File handling & preview
-    ------------------------- */
+    /* File handling & preview */
     function handleFile(file, type) {
         if (!file.type.startsWith('image/')) {
             alert('Please drop an image file.');
@@ -121,9 +113,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
-    /* -------------------------
-    Spinner & Toast helpers
-    ------------------------- */
+    /* Loader & Toast helpers */
     function showOverlay() { overlay.classList.add('show'); overlay.setAttribute('aria-hidden', 'false'); }
     function hideOverlay() { overlay.classList.remove('show'); overlay.setAttribute('aria-hidden', 'true'); }
     function showToast(message = 'Saved to Downloads & library', ms = 3500) {
@@ -132,9 +122,7 @@ document.addEventListener("DOMContentLoaded", function () {
         setTimeout(() => toast.classList.remove('show'), ms);
     }
 
-    /* -------------------------
-    Save & download helpers
-    ------------------------- */
+    /* Save & download helpers */
     function downloadBlob(blob, filename) {
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
@@ -145,11 +133,9 @@ document.addEventListener("DOMContentLoaded", function () {
         setTimeout(() => URL.revokeObjectURL(a.href), 2000);
     }
 
-    /* -------------------------
-    Created art JSON storage
+    /* Created art JSON storage
     - stored in localStorage under key: 'created_art'
-    - each entry: { id, timestamp, filename, meta: {contentName, styleName, contentSize, styleSize} }
-    ------------------------- */
+    - each entry: { id, timestamp, filename, meta: {contentName, styleName, contentSize, styleSize} } */
     const ART_KEY = 'created_art';
     function loadCreatedArt() {
         try {
@@ -168,9 +154,7 @@ document.addEventListener("DOMContentLoaded", function () {
         jsonArea.textContent = JSON.stringify(arr, null, 2);
     }
 
-    /* -------------------------
-    Neural Style Transfer - Create button method 
-    ------------------------- */
+    /* Neural Style Transfer */
     async function run_style_transfer() {
 
         try {
@@ -227,9 +211,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }, 4000);
     }
 
-    /* -------------------------
-    Create button: kick off generation
-    ------------------------- */
+    /* Create button */
     createBtn.addEventListener('click', async () => {
         if (!contentFile || !styleFile) return;
         showOverlay();
@@ -271,7 +253,7 @@ document.addEventListener("DOMContentLoaded", function () {
             outName.textContent = filename;
         } catch (err) {
             console.error(err);
-            alert('An error occurred while creating the stylized image. Check the console for details.');
+            alert('An error occurred while creating the stylised image. ');
         } finally {
             hideOverlay();
             createBtn.disabled = false;
@@ -285,6 +267,6 @@ document.addEventListener("DOMContentLoaded", function () {
         downloadBlob(blob, 'created_art.json');
     });
 
-    /* Utility: show stored JSON on load */
+    /* Show stored JSON on load */
     updateControls();
 });
