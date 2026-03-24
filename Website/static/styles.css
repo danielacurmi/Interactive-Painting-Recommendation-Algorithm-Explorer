@@ -522,7 +522,7 @@ input{
   font-weight: 600;
 }
 
-/* ===== Create Board Layout ===== */
+/* Create Board Layout */
 #board-overlay {
   display: flex;
   flex-direction: column;
@@ -555,7 +555,7 @@ input{
   border-color: #000;
 }
 
-/* ===== Board Grid ===== */
+/* Board Grid */
 .board-grid {
   display: flex;
   flex-wrap: wrap;
@@ -563,7 +563,7 @@ input{
   gap: 30px;
 }
 
-/* ===== Board Cards ===== */
+/* Board Cards */
 .board {
   width: 250px;
   height: 250px;
@@ -588,7 +588,7 @@ input{
   box-shadow: 0 12px 25px rgba(0,0,0,0.25);
 }
 
-/* ===== Favourites Board with Image Collage ===== */
+/* Favourites Board with Image Collage */
 .favourites-board {
   background-position: top left, top right, bottom left, bottom right;
   background-size: 50% 50%;

@@ -13,6 +13,8 @@ from torchvision import transforms, models
 from PIL import Image
 from datetime import datetime
 import psycopg2
+import random
+from collections import defaultdict
 
 #from Image_Feature_extraction.ipynb import run_style_transfer
 
@@ -618,6 +620,281 @@ def run_style_transfer(content_img_path, style_img_path,
 
     return output_path
 
+# Cold-Start Mitigation Strategy 
+# Concept structure i.e. what each box will contain
+def make_concept(concept_type, label, meta=None):
+    return {
+        "type": concept_type,   # artist, genre, style, period
+        "label": label,
+        "meta": meta or {}      # ids, file path etc...
+    }
+
+# Candidate Pools from DB
+def get_artist_candidates(cursor, limit=50):
+    query = """
+        SELECT a.artist_id, a.name_surname, COUNT(p.painting_id) as freq, a.art_movements
+        FROM artists a
+        JOIN paintings p ON a.artist_id = p.artist_id
+        GROUP BY a.artist_id
+        ORDER BY freq DESC
+        LIMIT %s;
+    """
+    cursor.execute(query, (limit,))
+    return cursor.fetchall()
+
+def get_genre_candidates(cursor, limit=20):
+    query = """
+        SELECT genre, COUNT(*) as freq
+        FROM paintings
+        WHERE genre IS NOT NULL
+        GROUP BY genre
+        ORDER BY freq DESC
+        LIMIT %s;
+    """
+    cursor.execute(query, (limit,))
+    return cursor.fetchall()
+
+def get_style_candidates(cursor, limit=20):
+    query = """
+        SELECT art_style, COUNT(*) as freq
+        FROM paintings
+        WHERE art_style IS NOT NULL
+        GROUP BY art_style
+        ORDER BY freq DESC
+        LIMIT %s;
+    """
+    cursor.execute(query, (limit,))
+    return cursor.fetchall()
+
+PERIODS = [
+    ("Medieval", 1400, 1600),
+    ("Renaissance", 1400, 1600),
+    ("Baroque", 1600, 1750),
+    ("Neoclassicism", 1750, 1850),
+    ("Impressionism", 1870, 1900),
+    ("Modern", 1900, 1960),
+    ("Contemporary", 1970, "Present")
+]
+
+# word cloud of sub-periods as an image
+# Controlled Sampling with k items per category to ensure coverage
+def split_head_tail(rows, head_ratio=0.3):
+    split_idx = int(len(rows) * head_ratio)
+    head = rows[:split_idx]       # popular
+    tail = rows[split_idx:]       # long-tail
+    return head, tail
+
+def sample_artists(artist_rows, k=8):
+    """
+    3 curated i.e. top popular
+    3 diverse by movement
+    2 long-tail for exploration
+    """
+    head, tail = split_head_tail(artist_rows, head_ratio=0.3)
+
+    selected = []
+    used_ids = set()
+
+    # Curated (top 3)
+    for aid, name, _, _ in head:
+        if len(selected) >= 3:
+            break
+        if aid not in used_ids:
+            selected.append(make_concept("artist", name, {"artist_id": aid}))
+            used_ids.add(aid)
+
+    # Diverse (by movement)
+    grouped = defaultdict(list)
+    for artist_id, name, freq, movements in head:
+        key = movements if movements else "Unknown"
+        grouped[key].append((artist_id, name))
+
+    groups = list(grouped.values())
+    random.shuffle(groups)
+
+    for group in groups:
+        if len(selected) >= 6:  # 3 curated + 3 diverse
+            break
+
+        random.shuffle(group)
+        for aid, name in group:
+            if aid not in used_ids:
+                selected.append(make_concept("artist", name, {"artist_id": aid}))
+                used_ids.add(aid)
+                break  # move to next group
+
+    # Long-tail (2)
+    random.shuffle(tail)
+    for aid, name, _, _ in tail:
+        if len(selected) >= 8:
+            break
+        if aid not in used_ids:
+            selected.append(make_concept("artist", name, {"artist_id": aid}))
+            used_ids.add(aid)
+
+    # Fallback
+    random.shuffle(artist_rows)
+    for aid, name, _, _ in artist_rows:
+        if len(selected) >= k:
+            break
+        if aid not in used_ids:
+            selected.append(make_concept("artist", name, {"artist_id": aid}))
+            used_ids.add(aid)
+
+    return selected[:k]
+
+def sample_styles(styles_with_freq, k=7):
+    head, tail = split_head_tail(styles_with_freq, 0.3)
+
+    selected = []
+    used = set()
+
+    # curated
+    for s, _ in head:
+        if len(selected) >= 2:
+            break
+        if s not in used:
+            selected.append(make_concept("style", s))
+            used.add(s)
+
+    # diverse
+    mid = head[2:]
+    random.shuffle(mid)
+
+    for s, _ in mid:
+        if len(selected) >= 5:
+            break
+        if s not in used:
+            selected.append(make_concept("style", s))
+            used.add(s)
+
+    # long-tail
+    random.shuffle(tail)
+    for s, _ in tail:
+        if len(selected) >= 7:
+            break
+        if s not in used:
+            selected.append(make_concept("style", s))
+            used.add(s)
+
+    # fallback
+    random.shuffle(styles_with_freq)
+    for s, _ in styles_with_freq:
+        if len(selected) >= k:
+            break
+        if s not in used:
+            selected.append(make_concept("style", s))
+            used.add(s)
+
+    return selected[:k]
+
+def sample_genres(genres_with_freq, k=7):
+    head, tail = split_head_tail(genres_with_freq, 0.3)
+
+    selected = []
+    used = set()
+
+    # curated
+    for g, _ in head:
+        if len(selected) >= 2:
+            break
+        if g not in used:
+            selected.append(make_concept("genre", g))
+            used.add(g)
+
+    # diverse
+    mid = head[2:]
+    random.shuffle(mid)
+
+    for g, _ in mid:
+        if len(selected) >= 5:
+            break
+        if g not in used:
+            selected.append(make_concept("genre", g))
+            used.add(g)
+
+    # long-tail
+    random.shuffle(tail)
+    for g, _ in tail:
+        if len(selected) >= 7:
+            break
+        if g not in used:
+            selected.append(make_concept("genre", g))
+            used.add(g)
+
+    # fallback
+    random.shuffle(genres_with_freq)
+    for g, _ in genres_with_freq:
+        if len(selected) >= k:
+            break
+        if g not in used:
+            selected.append(make_concept("genre", g))
+            used.add(g)
+
+    return selected[:k]
+
+def sample_periods(k=5):
+    selected = random.sample(PERIODS, k)
+    return [
+        make_concept("period", name, {"start": start, "end": end})
+        for name, start, end in selected
+    ]
+
+@app.route("/api/get_box_titles", methods=["GET"])
+def get_box_titles():
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Step 2: candidate pools
+        artists = get_artist_candidates(cursor, limit=50)
+        genres = get_genre_candidates(cursor, limit=20)
+        styles = get_style_candidates(cursor, limit=20)
+
+        # Step 3: controlled sampling
+        artist_boxes = sample_artists(artists, k=8)
+        style_boxes = sample_styles(styles, k=7)
+        genre_boxes = sample_genres(genres, k=7)
+        period_boxes = sample_periods(k=5)
+
+        # combine + shuffle
+        all_boxes = artist_boxes + style_boxes + genre_boxes + period_boxes
+        random.shuffle(all_boxes)
+
+        cursor.close()
+        conn.close()
+
+        return jsonify({
+            "success": True,
+            "boxes": all_boxes
+        })
+
+    except Exception as e:
+        print("ERROR in /api/get_box_titles:", e)
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+@app.route("/api/log_user_preferences", methods=["POST"])
+def log_user_preferences():
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # log user preferences from cold start page
+
+        return jsonify({
+            "success": True
+        })
+
+    except Exception as e:
+        print("ERROR in /api/log_user_preferences:", e)
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+    
 # TO-RUN: python app.py
 if __name__ == "__main__":
     app.run(debug=True)

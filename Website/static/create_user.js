@@ -1,10 +1,3 @@
-/*
-Handles client-side logic for:
-- contacting backend
-- redirecting existing users
-- handling consent acceptance
-- creating new user
-*/
 window.onload = function () {
     checkUser();
 };
@@ -17,7 +10,7 @@ async function checkUser() {
 
         if (data.exists === true) {
             // User already exists: redirect
-            redirectToHome();
+            redirectToNextPage();
         } else {
             // New user: show consent form
             showConsentForm();
@@ -106,7 +99,7 @@ async function acceptConsent() {
         if (result.success === true) {
             localStorage.setItem("user_id", result.user_id);
             await createSession();
-            redirectToHome();
+            redirectToNextPage();
         }
 
     } catch (error) {
@@ -114,9 +107,9 @@ async function acceptConsent() {
     }
 }
 
-/* Redirect user to main page */
-function redirectToHome() {
-    window.location.href = "/index";
+/* Redirect user to cold start page */
+function redirectToNextPage() {
+    window.location.href = "/cold_start";
 }
 
 // Decline / Exit Button
