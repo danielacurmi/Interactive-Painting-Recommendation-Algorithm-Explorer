@@ -2,6 +2,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     const boardButtons = document.querySelectorAll(".board");
     const finishBtn = document.querySelector(".btn");
 
+    // If already a user no need to select boxes since user_profile has already been built
+    const response1 = await fetch('/api/check_user');
+    const data1 = await response1.json();
+
+    if (data1.exists === true) {
+        redirectToHome();
+    }
+
     let selected = new Set();
 
     function formatLabel(text) {

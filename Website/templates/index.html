@@ -16,6 +16,7 @@
     
     <link rel="stylesheet" href="../static/styles.css">
     <link rel="stylesheet" href="../static/loader_4.css">
+    
     <script src="../static/scripts.js" defer></script>
 
     <title>Painting Recommendation System</title>
@@ -49,7 +50,9 @@
 
         <img src="{{ url_for('static', filename='angel1.png') }}">
     </div>
-    
+    <div class ="board-nav">
+        <input type="text" id="searchBar" placeholder="Search">
+    </div>
     <div class="modal-overlay" id="modalOverlay">
         <div class="modal">
             <span class="close-btn" id="closeModal">&times;</span>
@@ -85,19 +88,31 @@
                         <!-- <div style="margin-top:12px; align-items: center;">Loading Details…</div> -->
                     </div>
                 </div>
-                <h2 id="modalTitle"></h2>
-                <h2 id="modalArtist"></h2>
-                &nbsp; 
+                <h3 id="modalTitle"></h3>
+                <h4 id="modalArtist"></h4>
+                <p id="modalBirth"></p>
+                <p id="modalDeath"></p>
+                <p id="modalNationality"></p>
                 <div>
                     <hr>
-                    &nbsp; 
                     <p id="modalYear"> </p>
                     <p id="modalGenre"> </p>
+                    <p id="modalArtStyle"> </p>
+                    <p id="modalMedium"> </p>
                 </div>
                 
                 <div id="paletteContainer"> </div> &nbsp;
                 <p id="modalPaletteType"> &nbsp; </p>
-                <p id="modalDescription"> </p>
+                <p id="modalDescriptionTags"> </p>
+
+                <!-- Artist Details -->
+                <div>
+                    <hr>
+                    <h3> About the Artist</h3>
+                    <p id="modalFields"> </p>
+                    <p id="modalartMovements"> </p>
+                    <p id="modalBio"> </p>
+                </div>
 
                 <div class="feedbackButtons">
                     <select name="Add To Gallary" id="addToGallary"> Add To Gallary
@@ -116,7 +131,6 @@
             </div>
         </div>
     </div>
-    
     
     <div id="container">
         <div class="col"></div>

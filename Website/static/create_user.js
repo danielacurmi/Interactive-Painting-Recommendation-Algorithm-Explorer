@@ -7,6 +7,7 @@ async function checkUser() {
     try {
         const response = await fetch('/api/check_user');
         const data = await response.json();
+        localStorage.setItem("user_id", data.user_id);
 
         if (data.exists === true) {
             // User already exists: redirect
@@ -99,7 +100,7 @@ async function acceptConsent() {
         if (result.success === true) {
             localStorage.setItem("user_id", result.user_id);
             await createSession();
-            redirectToNextPage();
+            //redirectToNextPage();
         }
 
     } catch (error) {
@@ -109,7 +110,7 @@ async function acceptConsent() {
 
 /* Redirect user to cold start page */
 function redirectToNextPage() {
-    window.location.href = "/cold_start";
+    window.location.href = "/cold_start"; //cold_start
 }
 
 // Decline / Exit Button

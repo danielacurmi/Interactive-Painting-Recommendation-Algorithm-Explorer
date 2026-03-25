@@ -1,4 +1,6 @@
-
+window.onload = async function () {
+    await checkUser();  
+};
 
 document.addEventListener("DOMContentLoaded", () => {
     let fetching = false;
@@ -17,8 +19,8 @@ document.addEventListener("DOMContentLoaded", () => {
             const images = await response.json();
             fetching = false;
             return images.map(img => ({
-                url: `/paintings/${img}`,
-                filename: img
+                id: img.painting_id,
+                url: `/${img.image_path}`
             }));
         };
 
@@ -28,7 +30,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
             const img = document.createElement('img');
             img.src = imageData.url;
-            img.dataset.filename = imageData.filename;
+            img.dataset.id = imageData.id;
             img.classList.add("clickable");
 
             img.onerror = function () {
@@ -41,33 +43,52 @@ document.addEventListener("DOMContentLoaded", () => {
             // Click to open image modal, uses data from backend app.py
             img.addEventListener("click", async () => {
                 const loader = document.getElementById('loader');
-                const titleEl = document.getElementById("modalTitle");
-                const artistEl = document.getElementById("modalArtist");
-                const yearEl = document.getElementById("modalYear");
-                const genreEl = document.getElementById("modalGenre");
-                const paletteTypeEl = document.getElementById("modalPaletteType");
-                const descriptionEl = document.getElementById("modalDescription");
+                const title = document.getElementById("modalTitle");
+                const artist = document.getElementById("modalArtist");
+                const artistBirth = document.getElementById("modalBirth");
+                const artistDeath = document.getElementById("modalDeath");
+                const nationality = document.getElementById("modalNationality");
+                const fields = document.getElementById("modalFields");
+                const artMovements = document.getElementById("modalartMovements");
+                const bio = document.getElementById("modalBio"); 
+                const year = document.getElementById("modalYear"); 
+                const genre = document.getElementById("modalGenre");
+                const artStyle = document.getElementById("modalArtStyle");
+                const medium = document.getElementById("modalMedium");
+                const descriptionTags = document.getElementById("modalDescriptionTags");
+                const paletteType = document.getElementById("modalPaletteType");
                 const paletteDiv = document.getElementById("paletteContainer");
 
                 // Clear old content
-                titleEl.textContent = "";
-                artistEl.textContent = "";
-                yearEl.textContent = "";
-                genreEl.textContent = "";
-                paletteTypeEl.textContent = "";
-                descriptionEl.textContent = "";
+                title.textContent = "";
+                artist.textContent = "";
+                artistBirth.textContent = "";
+                artistDeath.textContent = "";
+                nationality.textContent = "";
+                fields.textContent = "";
+                artMovements.textContent = "";
+                bio.textContent = "";
+                artStyle.textContent = "";
+                medium.textContent = "";
+                year.textContent = "";
+                genre.textContent = "";
+                paletteType.textContent = "";
+                descriptionTags.textContent = "";
                 paletteDiv.innerHTML = "";
 
                 loader.style.display = 'block'; // Show loader only in details area
 
                 // Show modal with the new image
-                modalImage.src = img.src;
                 modalOverlay.style.display = "flex";
 
                 try {
-                    const response = await fetch(`/api/image-info/${img.dataset.filename}`);
+                    modalImage.dataset.id = img.dataset.id;
+                    const response = await fetch(`/api/painting/${img.dataset.id}`);
                     if (!response.ok) throw new Error("Bad response");
                     const data = await response.json();
+                    localStorage.setItem("user_id", data.user_id);
+
+                    modalImage.src = `/${data.image_path}`;
 
                     const favButton = document.getElementById("addToFav");
 
@@ -75,12 +96,25 @@ document.addEventListener("DOMContentLoaded", () => {
                     favButton.innerHTML = '<i class="fa-regular fa-star"></i> Add to Favourites';
                     favButton.disabled = false;
 
-                    titleEl.textContent = `${data.painting_name}`;
-                    artistEl.textContent = `By ${data.artist}`;
-                    yearEl.textContent = `Year: ${data.year}`;
-                    genreEl.textContent = `Genre: ${data.genre}`;
-                    paletteTypeEl.textContent = `Palette Type: ${data.palette_type}`;
-                    descriptionEl.textContent = `Description: ${data.description}`;
+                    title.textContent = data.title;
+
+                    artist.textContent = data.artist.name_surname;
+
+                    artistBirth.textContent =
+                        `${data.artist.birth_year} – ${data.artist.death_year}, ${data.artist.nationality}`;
+
+                    fields.textContent = `Fields: ${data.artist.fields}`;
+                    artMovements.textContent = `Art Movements: ${data.artist.art_movements}`;
+                    bio.textContent = data.artist.bio;
+
+                    artStyle.textContent = `Art Style: ${data.art_style}`;
+                    medium.textContent = `Medium: ${data.media}`;
+
+                    year.textContent = `Year: ${data.year_created}`;
+                    genre.textContent = `Genre: ${data.genre}`;
+
+                    paletteType.textContent = `Palette Type: ${data.palette_type}`;
+                    descriptionTags.textContent = `Description Tags: ${data.description_tags}`;
 
                     data.palette.forEach(color => {
                         const [r, g, b] = color;
@@ -91,7 +125,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     });
                 } catch (err) {
                     console.error("Failed to fetch image info:", err);
-                    titleEl.textContent = "Error loading details";
+                    title.textContent = "Error loading details";
                 } finally {
                     loader.style.display = 'none'; // Hide loader when done
                 }
@@ -171,10 +205,16 @@ async function addToFavourites() {
     const imageUrl = modalImage.src.replace(window.location.origin, "");
 
     try {
+        const paintingId = modalImage.dataset.id;
+        const userId = localStorage.getItem("user_id");
+
         const response = await fetch("/api/add-favourite", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ image: imageUrl }),
+            body: JSON.stringify({
+                painting_id: paintingId,
+                user_id: userId
+            }),
         });
 
         if (response.ok) {
@@ -212,6 +252,3 @@ window.onclick = function(event) {
         }
     }
 }
-
-
-

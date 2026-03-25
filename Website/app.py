@@ -13,13 +13,13 @@ from torchvision import transforms, models
 from PIL import Image
 from datetime import datetime
 import psycopg2
-import random
+import psycopg2.extras
 from collections import defaultdict
 
 #from Image_Feature_extraction.ipynb import run_style_transfer
 
 app = Flask(__name__)
-DATASET_PATH = r'C:\Users\danie\Desktop\_\Daniela Curmi\University\Final Year Project\Final Year Project Code Implementation\Website\paintings'
+DATASET_PATH = r'C:\Users\danie\Desktop\_\Daniela Curmi\University\Final Year Project\Final Year Project Code Implementation\Website'
 app.secret_key = "secret"  # Needed for session storage
 CORS(app)
 
@@ -63,18 +63,7 @@ def user_page():
 def cold_start():
     return render_template("cold_start.html")
 
-@app.route("/api/random-images/<int:n>")
-def random_images(n):
-    sample = random.sample(all_images, min(n, len(all_images)))
-    return jsonify(sample)
-
-@app.route("/paintings/<path:filename>")
-def serve_image(filename):
-    return send_from_directory(DATASET_PATH, filename)
-
-# -----------------------------
-# DATABASE CONNECTION
-# -----------------------------
+# Database connection
 def get_db_connection():
     conn = psycopg2.connect(
         host="localhost",
@@ -84,9 +73,7 @@ def get_db_connection():
     )
     return conn
 
-# -----------------------------
-# HELPER FUNCTIONS
-# -----------------------------
+# Helper Function for User IP address
 def get_user_ip():
     """
     Retrieve user's IP address from the request
@@ -98,9 +85,7 @@ def get_user_ip():
         ip = request.remote_addr
     return ip
 
-# -----------------------------
-# CHECK USER ENDPOINT
-# -----------------------------
+# Check User
 @app.route("/api/check_user", methods=["GET"])
 def check_user():
     """
@@ -130,9 +115,7 @@ def check_user():
         print("ERROR in /api/check_user:", e)
         return jsonify({"error": str(e)}), 500
     
-# -----------------------------
-# CREATE USER ENDPOINT
-# -----------------------------
+# Create User
 @app.route("/api/create_user", methods=["POST"])
 def create_user():
     """
@@ -164,14 +147,9 @@ def create_user():
 
     except Exception as e:
         print("ERROR in /api/create_user:", e)
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
-# -----------------------------
-# SESSION 
-# -----------------------------
+# Session Tracking
 @app.route("/api/create_session", methods=["POST"])
 def create_session():
     try:
@@ -206,10 +184,7 @@ def create_session():
         })
     except Exception as e:
         print("ERROR in /api/create_session:", e)
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
+        return jsonify({"success": False, "error": str(e)}), 500
     
 @app.route("/api/end_session", methods=["POST"])
 def end_session():
@@ -238,17 +213,13 @@ def end_session():
         print("ERROR in /api/end_session:", e)
         return jsonify({"success": False, "error": str(e)}), 500
     
-# -----------------------------
-# INTERACTION EVENTS LOGGING
-# -----------------------------
+# Interaction Events Logging
 @app.route("/api/interaction_event_logging", methods=["GET"])
 def interaction_event_logging():
     a = "hello"
     return a
 
-# -----------------------------
-# INTERACTION SUMMARY 
-# -----------------------------
+# Interaction Summary
 @app.route("/api/interaction_event_summary", methods=["GET"])
 def interaction_event_summary():
     a = "hello"
@@ -259,39 +230,138 @@ def interaction_event_summary():
 
 #event_id, session_id, painting_id, event_type, event_value
 
+# Get painting and artist metadata for each painting along with the image from the respective file path
+@app.route("/api/random-images/<int:n>")
+def random_images(n):
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
+    cur.execute("""
+        SELECT painting_id, image_path
+        FROM paintings
+        ORDER BY RANDOM()
+        LIMIT %s;
+    """, (n,))
+
+    rows = cur.fetchall()
+
+    cur.close()
+    conn.close()
+
+    return jsonify(rows)
+
+@app.route('/paintings/<path:filename>')
+def serve_painting(filename):
+    return send_from_directory(
+        os.path.join(DATASET_PATH, "paintings"),
+        filename
+    )
+
+@app.route('/api/painting/<int:painting_id>')
+def get_painting(painting_id):
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    cur.execute("""
+        SELECT 
+            p.painting_id,
+            p.title,
+            p.year_created,
+            p.genre,
+            p.art_style,
+            p.media,
+            p.description_tags,
+            p.image_path,
+
+            a.name_surname,
+            a.birth_year,
+            a.death_year,
+            a.nationality,
+            a.fields,
+            a.art_movements,
+            a.bio
+
+        FROM paintings p
+        JOIN artists a ON p.artist_id = a.artist_id
+        WHERE p.painting_id = %s;
+    """, (painting_id,))
+
+    row = cur.fetchone()
+
+    if not row:
+        cur.close()
+        conn.close()
+        return jsonify({"error": "Painting not found"}), 404
+
+    cur.close()
+    conn.close()
+
+    image_path = os.path.join(DATASET_PATH, row["image_path"])
+    image_path = image_path.replace("\\", "/")
+    image = cv2.imread(image_path)
+    if image is None:
+        return jsonify({"error": "Image not found on server"}), 500
+    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+    palette, palette_type = extract_visual_features(image_rgb)
+
+    response = {
+        "painting_id": row["painting_id"],
+        "title": row["title"],
+        "year_created": row["year_created"],
+        "genre": row["genre"],
+        "art_style": row["art_style"],
+        "media": row["media"],
+        "description_tags": row["description_tags"],
+        "image_path": row["image_path"],
+
+        "artist": {
+            "name_surname": row["name_surname"],
+            "birth_year": row["birth_year"],
+            "death_year": row["death_year"],
+            "nationality": row["nationality"],
+            "fields": row["fields"],
+            "art_movements": row["art_movements"],
+            "bio": row["bio"]
+        },
+
+        "palette": palette.tolist(),
+        "palette_type": palette_type
+    }
+
+    return jsonify(response)
+    
 # Make sure the file exists
 if not os.path.exists(FAVOURITES_FILE):
     with open(FAVOURITES_FILE, "w") as f:
         json.dump([], f)
 
-
-@app.route("/api/add-favourite", methods=["POST"])
+@app.route('/api/add-favourite', methods=['POST'])
 def add_favourite():
     data = request.get_json()
-    image = data.get("image")
+    painting_id = data.get("painting_id")
+    user_id = data.get("user_id")
 
-    if not image:
-        return jsonify({"error": "No image provided"}), 400
+    print("user_id:", user_id)
+    print("painting_id:", painting_id)
 
-    try:
-        # Load current favourites
-        with open(FAVOURITES_FILE, "r") as f:
-            favourites = json.load(f)
+    if not painting_id or not user_id:
+        return jsonify({"error": "Missing painting_id or user_id"}), 400
 
-        # Avoid duplicates
-        if image not in favourites:
-            favourites.append(image)
+    conn = get_db_connection()
+    cur = conn.cursor()
 
-        # Save back to file
-        with open(FAVOURITES_FILE, "w") as f:
-            json.dump(favourites, f)
+    cur.execute("""
+        INSERT INTO favourites (user_id, painting_id)
+        VALUES (%s, %s)
+        ON CONFLICT DO NOTHING;
+    """, (user_id, painting_id))  
 
-        return jsonify({"message": "Added to favourites"}), 200
-    except Exception as e:
-        print("Error saving favourite:", e)
-        return jsonify({"error": str(e)}), 500
+    conn.commit()
+    cur.close()
+    conn.close()
 
+    return jsonify({"message": "Added to favourites"})
 
 @app.route("/api/favourites", methods=["GET"])
 def get_favourites():
@@ -315,40 +385,40 @@ def get_gallery():
     ]
     return jsonify(files)
 
-@app.route("/api/image-info/<path:filename>")
-def image_info(filename):
-    image_path = os.path.join(DATASET_PATH, filename)
+# @app.route("/api/image-info/<path:filename>")
+# def image_info(filename):
+#     image_path = os.path.join(DATASET_PATH, filename)
 
-    # parse filename for genre, artist, painting, and year 
-    parts = os.path.splitext(os.path.basename(filename))[0].split("_")
-    artist_part = parts[0]
-    painting_part = "_".join(parts[1:])
-    match = re.search(r"\b\d{4}\b", painting_part)
-    if match:
-        year = match.group(0)
-        painting_part = painting_part.replace(year, "").replace("-", " ")
-    else:
-        year = "Unknown"
-        painting_part = painting_part.replace("-", " ")
+#     # parse filename for genre, artist, painting, and year 
+#     parts = os.path.splitext(os.path.basename(filename))[0].split("_")
+#     artist_part = parts[0]
+#     painting_part = "_".join(parts[1:])
+#     match = re.search(r"\b\d{4}\b", painting_part)
+#     if match:
+#         year = match.group(0)
+#         painting_part = painting_part.replace(year, "").replace("-", " ")
+#     else:
+#         year = "Unknown"
+#         painting_part = painting_part.replace("-", " ")
 
-    genre = os.path.basename(os.path.dirname(image_path)).replace("_", " ").title()
+#     genre = os.path.basename(os.path.dirname(image_path)).replace("_", " ").title()
 
-    artist = artist_part.replace("-", " ").title()
-    painting_name = painting_part.replace("-", " ").title()
+#     artist = artist_part.replace("-", " ").title()
+#     painting_name = painting_part.replace("-", " ").title()
 
-    image = cv2.imread(image_path)
-    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+#     image = cv2.imread(image_path)
+#     image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-    palette, palette_type = extract_visual_features(image_rgb)
+#     palette, palette_type = extract_visual_features(image_rgb)
 
-    return jsonify({
-        "genre": genre,
-        "artist": artist,
-        "painting_name": painting_name,
-        "year": year,
-        "palette": palette.tolist(),
-        "palette_type": palette_type
-    })
+#     return jsonify({
+#         "genre": genre,
+#         "artist": artist,
+#         "painting_name": painting_name,
+#         "year": year,
+#         "palette": palette.tolist(),
+#         "palette_type": palette_type
+#     })
 
 # folder for saving generated results
 GENERATED_DIR = os.path.join(os.getcwd(), "generated")
@@ -455,7 +525,7 @@ def extract_visual_features(image_rgb):
 # Neural Style Transfer
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# --------------- Utilities ---------------
+# Utilities 
 imsize = 512 if torch.cuda.is_available() else 256  # choose smaller if no GPU
 
 loader = transforms.Compose([
@@ -489,7 +559,7 @@ def save_image(tensor, path):
     pil = unloader(image)
     pil.save(path)
 
-# --------------- Gram matrix ---------------
+# Gram matrix 
 def gram_matrix(feature_maps):
     # feature_maps: tensor of shape [batch=1, C, H, W]
     b, c, h, w = feature_maps.size()
@@ -497,7 +567,7 @@ def gram_matrix(feature_maps):
     G = torch.mm(features, features.t())  # [C, C]
     return G.div(c * h * w)  # normalize
 
-# --------------- Model to extract features ---------------
+# Model to extract features 
 class VGGFeatures(nn.Module):
     def __init__(self, vgg, content_layers, style_layers):
         super().__init__()
@@ -520,7 +590,7 @@ class VGGFeatures(nn.Module):
                 style_feats[name] = cur
         return content_feats, style_feats
 
-# --------------- Loss functions (MSE) ---------------
+# Loss functions (MSE) 
 mse_loss = nn.MSELoss()
 
 def compute_content_loss(gen_feat, content_feat):
@@ -536,7 +606,7 @@ def total_variation_loss(img):
     y_diff = img[:, :, 1:, :] - img[:, :, :-1, :]
     return torch.sum(torch.abs(x_diff)) + torch.sum(torch.abs(y_diff))
 
-# --------------- Main style transfer function ---------------
+# Main style transfer function 
 def run_style_transfer(content_img_path, style_img_path,
                     output_path='output.jpg',
                     content_weight=1e0,
@@ -626,7 +696,7 @@ def make_concept(concept_type, label, meta=None):
     return {
         "type": concept_type,   # artist, genre, style, period
         "label": label,
-        "meta": meta or {}      # ids, file path etc...
+        "meta": meta or {}      # ids, file path etc... FOR THUMBNAIL
     }
 
 # Candidate Pools from DB
@@ -695,7 +765,7 @@ def sample_artists(artist_rows, k=8):
     selected = []
     used_ids = set()
 
-    # Curated (top 3)
+    # Curated 
     for aid, name, _, _ in head:
         if len(selected) >= 3:
             break
@@ -703,7 +773,7 @@ def sample_artists(artist_rows, k=8):
             selected.append(make_concept("artist", name, {"artist_id": aid}))
             used_ids.add(aid)
 
-    # Diverse (by movement)
+    # Diverse by movement
     grouped = defaultdict(list)
     for artist_id, name, freq, movements in head:
         key = movements if movements else "Unknown"
@@ -723,7 +793,7 @@ def sample_artists(artist_rows, k=8):
                 used_ids.add(aid)
                 break  # move to next group
 
-    # Long-tail (2)
+    # Long-tail
     random.shuffle(tail)
     for aid, name, _, _ in tail:
         if len(selected) >= 8:
@@ -871,10 +941,7 @@ def get_box_titles():
 
     except Exception as e:
         print("ERROR in /api/get_box_titles:", e)
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route("/api/log_user_preferences", methods=["POST"])
 def log_user_preferences():
@@ -882,6 +949,7 @@ def log_user_preferences():
         conn = get_db_connection()
         cursor = conn.cursor()
 
+        # TO-DO:
         # log user preferences from cold start page
 
         return jsonify({
@@ -890,10 +958,7 @@ def log_user_preferences():
 
     except Exception as e:
         print("ERROR in /api/log_user_preferences:", e)
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
+        return jsonify({"success": False, "error": str(e)}), 500
     
 # TO-RUN: python app.py
 if __name__ == "__main__":
