@@ -109,7 +109,16 @@ def check_user():
         cursor.close()
         conn.close()
 
-        return jsonify({"exists": bool(result)})
+        if result:
+            return jsonify({
+                "exists": True,
+                "user_id": result[0]
+            })
+        else:
+            return jsonify({
+                "exists": False,
+                "user_id": None
+            })
 
     except Exception as e:
         print("ERROR in /api/check_user:", e)

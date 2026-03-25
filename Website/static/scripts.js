@@ -1,6 +1,6 @@
-window.onload = async function () {
-    await checkUser();  
-};
+document.addEventListener("DOMContentLoaded", async () => {
+    await ensureUser();
+});
 
 document.addEventListener("DOMContentLoaded", () => {
     let fetching = false;
@@ -86,8 +86,6 @@ document.addEventListener("DOMContentLoaded", () => {
                     const response = await fetch(`/api/painting/${img.dataset.id}`);
                     if (!response.ok) throw new Error("Bad response");
                     const data = await response.json();
-                    localStorage.setItem("user_id", data.user_id);
-
                     modalImage.src = `/${data.image_path}`;
 
                     const favButton = document.getElementById("addToFav");
@@ -192,6 +190,33 @@ function showToast(message = 'Message', ms = 3500) {
     toast.classList.add('show');
     setTimeout(() => toast.classList.remove('show'), ms);
 }
+
+// Ensure user exists and is stored in localStorage
+async function ensureUser() {
+    let userId = localStorage.getItem("user_id");
+
+    // If already exists → reuse
+    if (userId) return userId;
+
+    try {
+        const response = await fetch('/api/check_user');
+        const data = await response.json();
+
+        if (data.exists && data.user_id) {
+            localStorage.setItem("user_id", data.user_id);
+            return data.user_id;
+        }
+
+        // No user → must go to consent page
+        window.location.href = "/";
+        return null;
+
+    } catch (err) {
+        console.error("Error ensuring user:", err);
+        return null;
+    }
+}
+
 // Add to Favourites function
 async function addToFavourites() {
     // Get the image currently displayed in the modal

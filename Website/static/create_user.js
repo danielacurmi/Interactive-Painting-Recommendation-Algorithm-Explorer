@@ -96,9 +96,8 @@ async function acceptConsent() {
             return;
         }
         const result = await response.json();
-        
+        localStorage.setItem("user_id", result.user_id);
         if (result.success === true) {
-            localStorage.setItem("user_id", result.user_id);
             await createSession();
             //redirectToNextPage();
         }
