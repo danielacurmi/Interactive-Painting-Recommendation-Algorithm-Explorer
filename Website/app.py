@@ -187,7 +187,7 @@ def create_session():
         cursor.close()
         conn.close()
 
-        return json({
+        return jsonify({
             "success": True,
             "session_id": session_id
         })
@@ -198,8 +198,18 @@ def create_session():
 @app.route("/api/end_session", methods=["POST"])
 def end_session():
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True)
+
+        if not data:
+            data = json.loads(request.data)
+
         session_id = data.get("session_id")
+
+        if not session_id:
+            return jsonify({
+                "success": False,
+                "error": "session_id is required"
+            }), 400
 
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -207,11 +217,17 @@ def end_session():
         update_query = """
             UPDATE sessions
             SET session_end = CURRENT_TIMESTAMP
-            WHERE session_id = %s
+            WHERE session_id = %s AND session_end IS NULL
         """
 
         cursor.execute(update_query, (session_id,))
         conn.commit()
+
+        if cursor.rowcount == 0:
+            return jsonify({
+                "success": False,
+                "error": "Invalid or already ended session"
+            }), 400
 
         cursor.close()
         conn.close()
@@ -221,7 +237,14 @@ def end_session():
     except Exception as e:
         print("ERROR in /api/end_session:", e)
         return jsonify({"success": False, "error": str(e)}), 500
+
+def closed_expired_sessions(user_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
     
+
+
 # Interaction Events Logging
 @app.route("/api/interaction_event_logging", methods=["GET"])
 def interaction_event_logging():

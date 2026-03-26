@@ -38,40 +38,6 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 });
 
-async function createSession() {
-    const user_id = localStorage.getItem("user_id");
-
-    if (!user_id) {
-        console.error("No user_id found");
-        return;
-    }
-
-    try {
-        const response = await fetch('/api/create_session', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ user_id: user_id })
-        });
-
-        if (!response.ok) {
-            const text = await response.text();
-            console.error("Session error:", text);
-            return;
-        }
-
-        const result = await response.json();
-
-        if (result.success) {
-            localStorage.setItem("session_id", result.session_id);
-        }
-
-    } catch (error) {
-        console.error("Error creating session:", error);
-    }
-}
-
 /* User clicks accept consent */
 async function acceptConsent() {
     const checkbox = document.getElementById("consent-checkbox");
@@ -94,12 +60,6 @@ async function acceptConsent() {
             const text = await response.text();
             console.error("Server error:", text);
             return;
-        }
-        const result = await response.json();
-        localStorage.setItem("user_id", result.user_id);
-        if (result.success === true) {
-            await createSession();
-            //redirectToNextPage();
         }
 
     } catch (error) {

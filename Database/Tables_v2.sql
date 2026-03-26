@@ -33,7 +33,8 @@ CREATE TABLE sessions (
     session_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     user_id INT REFERENCES users(user_id) ON DELETE CASCADE,
     session_start TIMESTAMPTZ NOT NULL,
-    session_end TIMESTAMPTZ
+    session_end TIMESTAMPTZ, 
+    last_activity TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TYPE event_type_enum AS ENUM (
