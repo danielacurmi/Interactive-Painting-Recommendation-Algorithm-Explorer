@@ -238,12 +238,52 @@ def end_session():
         print("ERROR in /api/end_session:", e)
         return jsonify({"success": False, "error": str(e)}), 500
 
-def closed_expired_sessions(user_id):
+def close_expired_sessions(user_id):
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    
+    query = """
+        UPDATE sessions
+        SET session_end = CURRENT_TIMESTAMP
+        WHERE user_id = %s
+        AND session_end IS NULL
+        AND last_activity < CURRENT_TIMESTAMP - INTERVAL '2 minutes'
+    """
 
+    cursor.execute(query, (user_id,))
+    conn.commit()
+
+    cursor.close()
+    conn.close()
+
+@app.route("/api/update_activity", methods=["POST"])
+def update_activity():
+    try:
+        data = request.get_json()
+        session_id = data.get("session_id")
+
+        if not session_id:
+            return jsonify({"success": False}), 400
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        query = """
+            UPDATE sessions
+            SET last_activity = CURRENT_TIMESTAMP
+            WHERE session_id = %s AND session_end IS NULL
+        """
+
+        cursor.execute(query, (session_id,))
+        conn.commit()
+
+        cursor.close()
+        conn.close()
+
+        return jsonify({"success": True})
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 # Interaction Events Logging
 @app.route("/api/interaction_event_logging", methods=["GET"])

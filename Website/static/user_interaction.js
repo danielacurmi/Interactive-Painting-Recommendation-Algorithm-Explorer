@@ -4,6 +4,32 @@ window.onload = function() {
 
 window.addEventListener("pagehide", endSession);
 
+const activityEvents = ["click", "mousemove", "keydown", "scroll"];
+activityEvents.forEach(event => {
+    window.addEventListener(event, debounce(updateActivity, 5000));
+});
+
+function updateActivity() {
+    const session_id = localStorage.getItem("session_id");
+    if (!session_id) return;
+
+    fetch("/api/update_activity", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ session_id })
+    });
+}
+
+function debounce(func, delay) {
+    let timeout;
+    return function () {
+        clearTimeout(timeout);
+        timeout = setTimeout(func, delay);
+    };
+}
+
 async function createSession() {
     const user_id = localStorage.getItem("user_id");
 
