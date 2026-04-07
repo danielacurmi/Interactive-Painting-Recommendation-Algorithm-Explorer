@@ -493,7 +493,7 @@ def get_gallery():
 #     })
 
 # folder for saving generated results
-GENERATED_DIR = os.path.join(os.getcwd(), "generated")
+GENERATED_DIR = os.path.join(os.getcwd(), "paintings\AI-Generated Images")
 os.makedirs(GENERATED_DIR, exist_ok=True)
 
 @app.route('/style-transfer', methods=['POST'])
@@ -511,7 +511,7 @@ def style_transfer_api():
     #style_file.save(style_path)
 
     # Create output filename
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now().strftime("%Y_%m_%d__%H_%M_%S")
     output_filename = f"styled_{timestamp}.jpg"
     output_path = os.path.join(GENERATED_DIR, output_filename)
 

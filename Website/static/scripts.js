@@ -207,7 +207,7 @@ async function ensureUser() {
             return data.user_id;
         }
 
-        // No user → must go to consent page
+        // No user then must go to consent page
         window.location.href = "/";
         return null;
 
