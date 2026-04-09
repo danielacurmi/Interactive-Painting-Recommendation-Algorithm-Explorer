@@ -1,30 +1,51 @@
 document.addEventListener("DOMContentLoaded", async () => {
-    await ensureUser();
+    if (document.body?.dataset.requireUser === "true") {
+        await ensureUser();
+    }
 });
+
+if (!window.BASE_PATH) {
+    window.BASE_PATH = window.ARTRECSYS_BASE_PATH || "";
+    window.appPath = (path) => `${window.BASE_PATH}${path}`;
+}
 
 document.addEventListener("DOMContentLoaded", () => {
     let fetching = false;
     const container = document.getElementById('container');
     
+    console.log("Container found:", !!container);
+    
     if (container) {
+        console.log("Initializing gallery...");
         const cols = Array.from(container.getElementsByClassName('col'));
         const modalOverlay = document.getElementById("modalOverlay");
         const modalImage = document.getElementById("modalImage");
         const closeModal = document.getElementById("closeModal");
 
         const fetchImageData = async () => {
+            console.log("fetchImageData called");
             fetching = true;
             document.getElementById('loader').style.display = 'block';
-            const response = await fetch(`/api/random-images/30`);
+            const response = await fetch(window.appPath(`/api/random-images/30`));
             const images = await response.json();
+            console.log("Fetched images:", images);
+            console.log("Image count:", images.length);
             fetching = false;
-            return images.map(img => ({
-                id: img.painting_id,
-                url: `/${img.image_path}`
-            }));
+            const mapped = images.map(img => {
+                const url = window.appPath(`/${img.image_path}`);
+                console.log("Image path from API:", img.image_path, "-> URL:", url);
+                return {
+                    id: img.painting_id,
+                    url: url
+                };
+            });
+            console.log("Mapped images:", mapped);
+            return mapped;
+
         };
 
         const createCard = (imageData, col) => {
+            console.log("Creating card with data:", imageData);
             const card = document.createElement('div');
             card.classList.add('card');
 
@@ -32,6 +53,7 @@ document.addEventListener("DOMContentLoaded", () => {
             img.src = imageData.url;
             img.dataset.id = imageData.id;
             img.classList.add("clickable");
+            console.log("Image src set to:", img.src);
 
             img.onerror = function () {
                 this.parentElement.style.display = "none";
@@ -83,10 +105,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
                 try {
                     modalImage.dataset.id = img.dataset.id;
-                    const response = await fetch(`/api/painting/${img.dataset.id}`);
+                    const response = await fetch(window.appPath(`/api/painting/${img.dataset.id}`));
                     if (!response.ok) throw new Error("Bad response");
                     const data = await response.json();
-                    modalImage.src = `/${data.image_path}`;
+                    modalImage.src = window.appPath(`/${data.image_path}`);
 
                     const favButton = document.getElementById("addToFav");
 
@@ -135,9 +157,13 @@ document.addEventListener("DOMContentLoaded", () => {
         };
 
         const loadImages = async () => {
+            console.log("loadImages called");
+            console.log("Columns found:", cols.length);
             const images = await fetchImageData();
+            console.log("Images to load:", images.length);
             if (images.length > 0) {
                 images.forEach((imgData, index) => {
+                    console.log(`Adding image ${index}:`, imgData);
                     createCard(imgData, cols[index % cols.length]);
                 });
             }
@@ -199,7 +225,7 @@ async function ensureUser() {
     if (userId) return userId;
 
     try {
-        const response = await fetch('/api/check_user');
+        const response = await fetch(window.appPath('/api/check_user'));
         const data = await response.json();
 
         if (data.exists && data.user_id) {
@@ -208,7 +234,7 @@ async function ensureUser() {
         }
 
         // No user then must go to consent page
-        window.location.href = "/";
+        window.location.href = window.appPath("/");
         return null;
 
     } catch (err) {
@@ -233,7 +259,7 @@ async function addToFavourites() {
         const paintingId = modalImage.dataset.id;
         const userId = localStorage.getItem("user_id");
 
-        const response = await fetch("/api/add-favourite", {
+        const response = await fetch(window.appPath("/api/add-favourite"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({

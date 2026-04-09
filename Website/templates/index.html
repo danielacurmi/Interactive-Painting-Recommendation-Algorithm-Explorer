@@ -7,23 +7,25 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css"
         integrity="sha512-z3gLpd7yknf1YoNbCzqRKc4qyor8gaKU1qmn+CShxbuBusANI9QpRohGBreCFkKxLhei6S9CQXFEbbKuqLg0DA=="
         crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <script>window.ARTRECSYS_BASE_PATH = "{{ request.script_root }}";</script>
 
     <!-- h1 font imports -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Fascinate&family=UnifrakturMaguntia&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Fascinate&family=UnifrakturMaguntia&display=swap"
+        rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
     <link href="https://fonts.cdnfonts.com/css/old-london" rel="stylesheet">
-    
-    <link rel="stylesheet" href="../static/styles.css">
-    <link rel="stylesheet" href="../static/loader_4.css">
-    <script src="../static/user_interaction.js" defer></script>
-    <script src="../static/scripts.js" defer></script>
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='loader_4.css') }}">
+    <script src="{{ url_for('static', filename='user_interaction.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='scripts.js') }}" defer></script>
 
     <title>Painting Recommendation System</title>
 </head>
 
-<body>
+<body data-require-user="true">
     <h1> Painting Recommendation System </h1>
     <div class="header">
         <img src="{{ url_for('static', filename='angel1.png') }}" class="reflect">
@@ -43,7 +45,7 @@
             <button class="layered" data-href="{{ url_for('create_gallary') }}">
                 <span class="btn-inner">
                     <span class="btn-text">Create</span>
-                </span>  
+                </span>
             </button>
             <!-- <a href="#" class="icon"><i class="fas fa-bell"></i></a> 
             <a href="#" class="icon"><i class="fas fa-comment-dots"></i></a>-->
@@ -51,7 +53,7 @@
 
         <img src="{{ url_for('static', filename='angel1.png') }}">
     </div>
-    <div class ="board-nav">
+    <div class="board-nav">
         <input type="text" id="searchBar" placeholder="Search">
     </div>
     <div class="modal-overlay" id="modalOverlay">
@@ -77,8 +79,8 @@
                             <a> Which painting regions contributed the most? </a>
                             <a> What would change this recommendation? </a>
                         </div>
-                    </div>  
-                </div>              
+                    </div>
+                </div>
                 <div class="image-container">
                     <div id="loader">
                         <div class="dino-loader">
@@ -101,7 +103,7 @@
                     <p id="modalArtStyle"> </p>
                     <p id="modalMedium"> </p>
                 </div>
-                
+
                 <div id="paletteContainer"> </div> &nbsp;
                 <p id="modalPaletteType"> &nbsp; </p>
                 <p id="modalDescriptionTags"> </p>
@@ -122,11 +124,11 @@
                     </select>
 
                     <button id="addToFav" onclick="addToFavourites()">
-                        <i class="fa-sm far fa-star"></i> Add To Favourites 
+                        <i class="fa-sm far fa-star"></i> Add To Favourites
                     </button>
                     <button id="notInterested" onclick="notInterested()">
                         <i class="fa-sm fas fa-ban"></i> Not Interested
-                    </button>                                    
+                    </button>
                 </div>
                 <div class="rate">
                     <input type="radio" id="star5" name="rate" value="5" />
@@ -144,7 +146,7 @@
             </div>
         </div>
     </div>
-    
+
     <div id="container">
         <div class="col"></div>
         <div class="col"></div>
@@ -158,4 +160,3 @@
 </body>
 
 </html>
-

@@ -1,0 +1,12 @@
+Flask
+flask-cors
+numpy
+opencv-python-headless
+PyWavelets
+matplotlib
+scikit-learn
+scikit-image
+torch
+torchvision
+Pillow
+psycopg2-binary

@@ -14,14 +14,15 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fascinate&family=UnifrakturMaguntia&display=swap" rel="stylesheet">
   <link href="https://fonts.cdnfonts.com/css/old-london" rel="stylesheet">
-  
-  <link rel="stylesheet" href="../static/styles.css">
-  <link rel="stylesheet" href="../static/loader_4.css">
-  <script src="../static/scripts.js" defer></script>
-  <script src="../static/style_transfer.js" defer></script>
+
+  <script>window.ARTRECSYS_BASE_PATH = "{{ request.script_root }}";</script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='loader_4.css') }}">
+  <script src="{{ url_for('static', filename='scripts.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='style_transfer.js') }}" defer></script>
 </head>
 
-<body class = "style_transfer">
+<body class = "style_transfer" data-require-user="true">
   <h1>Create Your Own Art</h1>
 
   <div class="pages">        

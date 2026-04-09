@@ -14,13 +14,14 @@
     <link href="https://fonts.googleapis.com/css2?family=Fascinate&family=UnifrakturMaguntia&display=swap" rel="stylesheet">
     <link href="https://fonts.cdnfonts.com/css/old-london" rel="stylesheet">
 
-    <link rel="stylesheet" href="../static/welcome.css">
-    <link rel="stylesheet" href="../static/loader_4.css">
-    <script src="../static/create_user.js" defer></script>
+    <script>window.ARTRECSYS_BASE_PATH = "{{ request.script_root }}";</script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='welcome.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='loader_4.css') }}">
+    <script src="{{ url_for('static', filename='create_user.js') }}" defer></script>
 
     <title>Create User</title>
 </head>
-<body>
+<body data-require-user="true">
     <h1>Create User</h1>
     <div id="loader">
         <p>Checking user...</p>

@@ -2,10 +2,13 @@ window.onload = function () {
     checkUser();
 };
 
+const BASE_PATH = window.ARTRECSYS_BASE_PATH || "";
+const appPath = (path) => `${BASE_PATH}${path}`;
+
 /* Call backend to check whether the current IP exists */
 async function checkUser() {
     try {
-        const response = await fetch('/api/check_user');
+        const response = await fetch(appPath('/api/check_user'));
         const data = await response.json();
         localStorage.setItem("user_id", data.user_id);
 
@@ -49,7 +52,7 @@ async function acceptConsent() {
      }
 
     try {
-        const response = await fetch('/api/create_user', {
+        const response = await fetch(appPath('/api/create_user'), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -69,7 +72,7 @@ async function acceptConsent() {
 
 /* Redirect user to cold start page */
 function redirectToNextPage() {
-    window.location.href = "/cold_start"; //cold_start
+    window.location.href = appPath("/cold_start"); //cold_start
 }
 
 // Decline / Exit Button
@@ -81,6 +84,6 @@ document.addEventListener("DOMContentLoaded", function () {
 });
 
 async function declineConsent() {
-    window.location.href = "/";
+    window.location.href = appPath("/");
 }
 

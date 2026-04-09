@@ -1,4 +1,7 @@
 document.addEventListener("DOMContentLoaded", function () {
+    const BASE_PATH = window.ARTRECSYS_BASE_PATH || "";
+    const appPath = (path) => `${BASE_PATH}${path}`;
+
     /* DOM references */
     const contentDrop = document.getElementById('contentDrop');
     const styleDrop = document.getElementById('styleDrop');
@@ -165,7 +168,7 @@ document.addEventListener("DOMContentLoaded", function () {
             formData.append("content", contentFile.file);
             formData.append("style", styleFile.file);
 
-            const response = await fetch("/style-transfer", {
+            const response = await fetch(appPath("/style-transfer"), {
                 method: "POST",
                 body: formData,
             });
@@ -183,7 +186,7 @@ document.addEventListener("DOMContentLoaded", function () {
             link.click();
             document.body.removeChild(link);
 
-            const blobResponse = await fetch(downloadUrl);
+            const blobResponse = await fetch(downloadUrl.startsWith("/") ? appPath(downloadUrl) : downloadUrl);
             const blob = await blobResponse.blob();
 
             // show toast

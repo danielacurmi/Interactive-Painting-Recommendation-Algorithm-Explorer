@@ -11,9 +11,10 @@
     <!-- h1 font imports -->
     <link href="https://fonts.cdnfonts.com/css/old-london" rel="stylesheet">
     <link id="googleFonts" href="https://fonts.googleapis.com/css2?family=Raleway:ital,wght@0,100;0,200;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap" rel="stylesheet" type="text/css">
-    <link rel="stylesheet" href="../static/welcome.css">
+    <script>window.ARTRECSYS_BASE_PATH = "{{ request.script_root }}";</script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='welcome.css') }}">
 
-    <script src="../static/scripts.js" defer></script>
+    <script src="{{ url_for('static', filename='scripts.js') }}" defer></script>
 
     <title>Welcome Page</title>
 </head>
@@ -26,29 +27,29 @@
     <!--<p>This website is a Painting Recommendation System, developed as part of a Final Year Project for the B.sc in Information Technology (Honours) (Artificial Intelligence).
         Before Creating a User, click on the Tutorial to get a breif overview on how to use the website. Once you're finished Create a User to start viewing paintings.</p>-->
     <div class="gallery">
-        <img class="p1" src="../static/frame1p.png">
-        <img class="p2" src="../static/frame2p.png">
+        <img class="p1" src="{{ url_for('static', filename='frame1p.png') }}">
+        <img class="p2" src="{{ url_for('static', filename='frame2p.png') }}">
 
         <div class="frame-button create">
-            <img src="../static/frame8.png">
+            <img src="{{ url_for('static', filename='frame8.png') }}">
             <button class="transparent-btn" data-href="{{ url_for('user_page') }}"></button>
         </div>
 
         <div class="frame-button tutorial">
-            <img src="../static/frame7.png">
+            <img src="{{ url_for('static', filename='frame7.png') }}">
             <button class="transparent-btn"></button>
         </div>
 
-        <img class="p3" src="../static/frame12.png">
-        <img class="p4" src="../static/frame23.png">
+        <img class="p3" src="{{ url_for('static', filename='frame12.png') }}">
+        <img class="p4" src="{{ url_for('static', filename='frame23.png') }}">
 
-        <img class="s1" src="../static/frame3.png">
-        <img class="s2" src="../static/frame4p.png">
-        <img class="s3" src="../static/frame20.png">
-        <img class="s4" src="../static/frame24.png">
-        <img class="s5" src="../static/frame21.png">
-        <img class="s6" src="../static/frame22.png">
-        <!--<img class="s7" src="../static/frame11.png">-->
+        <img class="s1" src="{{ url_for('static', filename='frame3.png') }}">
+        <img class="s2" src="{{ url_for('static', filename='frame4p.png') }}">
+        <img class="s3" src="{{ url_for('static', filename='frame20.png') }}">
+        <img class="s4" src="{{ url_for('static', filename='frame24.png') }}">
+        <img class="s5" src="{{ url_for('static', filename='frame21.png') }}">
+        <img class="s6" src="{{ url_for('static', filename='frame22.png') }}">
+        <!--<img class="s7" src="{{ url_for('static', filename='frame11.png') }}">-->
     </div>
 </body>
 

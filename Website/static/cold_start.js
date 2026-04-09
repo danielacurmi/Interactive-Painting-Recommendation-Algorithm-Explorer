@@ -2,8 +2,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     const boardButtons = document.querySelectorAll(".board");
     const finishBtn = document.querySelector(".btn");
 
+    const BASE_PATH = window.ARTRECSYS_BASE_PATH || "";
+    const appPath = (path) => `${BASE_PATH}${path}`;
+
     // If already a user no need to select boxes since user_profile has already been built
-    const response1 = await fetch('/api/check_user');
+    const response1 = await fetch(appPath('/api/check_user'));
     const data1 = await response1.json();
 
     if (data1.exists === true) {
@@ -38,7 +41,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     // Fetch box titles
     async function loadBoxes() {
         try {
-            const response = await fetch("/api/get_box_titles");
+            const response = await fetch(appPath("/api/get_box_titles"));
             const data = await response.json();
 
             if (!data.success) {
@@ -127,5 +130,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 
 /* Redirect user to main page */
 function redirectToHome() {
-    window.location.href = "/index";
+    const BASE_PATH = window.ARTRECSYS_BASE_PATH || "";
+    window.location.href = `${BASE_PATH}/index`;
 }

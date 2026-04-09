@@ -2,8 +2,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     const favContainer = document.getElementById("favourites-container");
     if (!favContainer) return; 
 
+  const BASE_PATH = window.ARTRECSYS_BASE_PATH || "";
+  const appPath = (path) => `${BASE_PATH}${path}`;
+
     try {
-        const response = await fetch("/api/favourites");
+    const response = await fetch(appPath("/api/favourites"));
         const favourites = await response.json();
 
         favourites.forEach(image => {
@@ -24,8 +27,11 @@ document.addEventListener("DOMContentLoaded", async () => {
 
 
 async function loadFavouritesBackground() {
+  const BASE_PATH = window.ARTRECSYS_BASE_PATH || "";
+  const appPath = (path) => `${BASE_PATH}${path}`;
+
   try {
-    const response = await fetch('/api/favourites');
+    const response = await fetch(appPath('/api/favourites'));
     const data = await response.json();
 
     // `data` is already an array

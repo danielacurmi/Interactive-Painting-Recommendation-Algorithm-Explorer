@@ -1,0 +1,122 @@
+# ---------------------------------------------
+# Anchors for re-use in multiple services
+# ---------------------------------------------
+
+x-envs:
+  db-env: &db-env
+    DB_HOST: ${DB_HOST}
+    DB_PORT: ${DB_PORT}
+    DB_NAME: ${DB_NAME}
+
+  gpu-env: &gpu-env
+    NVIDIA_VISIBLE_DEVICES: all
+    NVIDIA_DRIVER_CAPABILITIES: compute,utility
+
+x-gpu-config: &gpu-config
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: all
+            capabilities: [ gpu ]
+
+x-build-args: &pytorch-build-args
+  args:
+    BASE_IMAGE: ${PYTORCH_IMAGE}
+    TORCH_CUDA_ARCH_LIST: ${TORCH_CUDA_ARCH_LIST}
+
+x-python-api-config: &python-api-config
+  expose:
+    - "${INTERNAL_API_PORT:-8000}"
+  command: python -m uvicorn api:app --host 0.0.0.0 --port ${INTERNAL_API_PORT:-8000} --root-path /api/SERVICE_NAME_PLACEHOLDER # Placeholder effectively ignored if not overridden, but good practice
+  healthcheck:
+    test: [ "CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:${INTERNAL_API_PORT:-8000}/health')\"" ]
+    interval: 10s
+    timeout: 5s
+    retries: 5
+    start_period: 10s
+
+x-volumes:
+  python-base-volumes: &python-base-volumes
+    volumes:
+      - ./shared_utils:/app/shared_utils:ro
+  python-model-volumes: &python-model-volumes
+    volumes:
+      - ./shared_utils:/app/shared_utils:ro
+      - ./model_cache:/models_cache
+      - ./Website/paintings:/app/paintings
+
+# --- Traefik Configuration Anchors ---
+# These anchors define the standard Traefik labels.
+# Usage:
+#   labels:
+#     <<: *traefik-std-labels
+#     traefik.http.routers.my-service.rule: Host(`localhost`) && PathPrefix(`/my-service`)
+#     traefik.http.services.my-service.loadbalancer.server.port: 8000
+
+x-traefik-common: &traefik-common
+  networks:
+    - default
+
+# ---------------------------------------------
+
+services:   
+  # --- Artrecsys ---
+  artrecsys:
+    container_name: ${PROJECT_NAME}-artrecsys
+    build:
+      context: ./Website
+      <<: *pytorch-build-args
+    restart: always
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      <<: *gpu-env
+      ARTRECSYS_BASE_PATH: /artrecsys
+      ARTRECSYS_DATASET_PATH: /app/paintings
+      ARTRECSYS_DB_HOST: artrecsys-db
+      ARTRECSYS_DB_NAME: ART_RECSYS_DB
+      ARTRECSYS_DB_USER: postgres
+      ARTRECSYS_DB_PASSWORD_FILE: /run/secrets/db_root_pass
+    command: python -c "from app import app; app.run(host='0.0.0.0', port=5000)"
+    expose:
+      - "5000"
+    secrets:
+      - db_root_pass
+    <<: [ *gpu-config, *python-model-volumes ]
+    depends_on:
+      artrecsys-db:
+        condition: service_healthy
+    labels:
+      - "org.label-schema.group=public-facing"
+      - "org.label-schema.role=frontend"
+      - "traefik.enable=true"
+      - "traefik.http.routers.artrecsys.rule=Host(`${DOMAIN:-localhost}`, `localhost`, `demos.ainewsanalysis.org`) && PathPrefix(`/artrecsys`)"
+      - "traefik.http.services.artrecsys.loadbalancer.server.port=5000"
+
+  artrecsys-db:
+    container_name: ${PROJECT_NAME}-artrecsys-db
+    image: pgvector/pgvector:pg15
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_DB_USER}
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_root_pass
+      POSTGRES_DB: ART_RECSYS_DB
+    secrets:
+      - db_root_pass
+    # expose:
+    #   - "5432"
+    ports:
+      - "5435:5432"
+    volumes:
+      - artrecsys_postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_DB_USER} -d ART_RECSYS_DB" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    labels:
+      - "org.label-schema.group=functional"
+      - "org.label-schema.role=database"
+  # ----------------
