@@ -19,9 +19,35 @@ from collections import defaultdict
 #from Image_Feature_extraction.ipynb import run_style_transfer
 
 app = Flask(__name__)
-DATASET_PATH = r'C:\Users\danie\Desktop\_\Daniela Curmi\University\Final Year Project\Final Year Project Code Implementation\Website'
+BASE_PATH = os.environ.get("ARTRECSYS_BASE_PATH", "/artrecsys").rstrip("/")
+
+
+class PrefixMiddleware:
+    def __init__(self, app, prefix):
+        self.app = app
+        self.prefix = prefix
+
+    def __call__(self, environ, start_response):
+        if self.prefix:
+            path_info = environ.get("PATH_INFO", "")
+            if path_info.startswith(self.prefix):
+                environ["SCRIPT_NAME"] = environ.get("SCRIPT_NAME", "") + self.prefix
+                environ["PATH_INFO"] = path_info[len(self.prefix):] or "/"
+        return self.app(environ, start_response)
+
+
+app.wsgi_app = PrefixMiddleware(app.wsgi_app, BASE_PATH)
+DATASET_PATH = os.environ.get("ARTRECSYS_DATASET_PATH", os.getcwd())
 app.secret_key = "secret"  # Needed for session storage
 CORS(app)
+
+
+def resolve_painting_path(image_path):
+    paintings_dir = DATASET_PATH if DATASET_PATH.endswith("paintings") else os.path.join(DATASET_PATH, "paintings")
+    normalized_path = image_path.lstrip("/\\")
+    if normalized_path.startswith("paintings/"):
+        normalized_path = normalized_path[len("paintings/"):]
+    return os.path.join(paintings_dir, normalized_path)
 
 # Move to Database
 FAVOURITES_FILE = "favourites.json"
@@ -65,11 +91,18 @@ def cold_start():
 
 # Database connection
 def get_db_connection():
+    db_password = os.environ.get("ARTRECSYS_DB_PASSWORD")
+    db_password_file = os.environ.get("ARTRECSYS_DB_PASSWORD_FILE")
+
+    if not db_password and db_password_file and os.path.exists(db_password_file):
+        with open(db_password_file, "r", encoding="utf-8") as password_file:
+            db_password = password_file.read().strip()
+
     conn = psycopg2.connect(
-        host="localhost",
-        database="ART_RECSYS_DB",
-        user="postgres",
-        password="Catmelon304!"
+        host=os.environ.get("ARTRECSYS_DB_HOST", "artrecsys-db"),
+        database=os.environ.get("ARTRECSYS_DB_NAME", "ART_RECSYS_DB"),
+        user=os.environ.get("ARTRECSYS_DB_USER", "postgres"),
+        password=db_password or "Catmelon304!"
     )
     return conn
 
@@ -195,10 +228,9 @@ def create_session():
         print("ERROR in /api/create_session:", e)
         return jsonify({"success": False, "error": str(e)}), 500
     
-# Keep the same session when reloading the website with localStorage Cache then end session if session exceeds 4 days or new session starded    
-@app.route("/api/end_session", methods=["POST"]) 
-def end_session(): 
-    try: 
+@app.route("/api/end_session", methods=["POST"])
+def end_session():
+    try:
         data = request.get_json(silent=True)
 
         if not data:
@@ -325,8 +357,9 @@ def random_images(n):
 
 @app.route('/paintings/<path:filename>')
 def serve_painting(filename):
+    paintings_dir = os.path.join(DATASET_PATH, "paintings") if not DATASET_PATH.endswith("paintings") else DATASET_PATH
     return send_from_directory(
-        os.path.join(DATASET_PATH, "paintings"),
+        paintings_dir,
         filename
     )
 
@@ -369,7 +402,7 @@ def get_painting(painting_id):
     cur.close()
     conn.close()
 
-    image_path = os.path.join(DATASET_PATH, row["image_path"])
+    image_path = resolve_painting_path(row["image_path"])
     image_path = image_path.replace("\\", "/")
     image = cv2.imread(image_path)
     if image is None:
