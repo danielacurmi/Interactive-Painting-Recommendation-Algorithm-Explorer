@@ -2,6 +2,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     await ensureUser();
 });
 
+const BASE_PATH = window.ARTRECSYS_BASE_PATH || "";
+const appPath = (path) => `${BASE_PATH}${path}`;
+
 document.addEventListener("DOMContentLoaded", () => {
     let fetching = false;
     const container = document.getElementById('container');
@@ -15,12 +18,12 @@ document.addEventListener("DOMContentLoaded", () => {
         const fetchImageData = async () => {
             fetching = true;
             document.getElementById('loader').style.display = 'block';
-            const response = await fetch(`/api/random-images/30`);
+            const response = await fetch(appPath(`/api/random-images/30`));
             const images = await response.json();
             fetching = false;
             return images.map(img => ({
                 id: img.painting_id,
-                url: `/${img.image_path}`
+                url: appPath(`/${String(img.image_path).replace(/^\/+/, "")}`)
             }));
         };
 
@@ -83,10 +86,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
                 try {
                     modalImage.dataset.id = img.dataset.id;
-                    const response = await fetch(`/api/painting/${img.dataset.id}`);
+                    const response = await fetch(appPath(`/api/painting/${img.dataset.id}`));
                     if (!response.ok) throw new Error("Bad response");
                     const data = await response.json();
-                    modalImage.src = `/${data.image_path}`;
+                    modalImage.src = appPath(`/${String(data.image_path).replace(/^\/+/, "")}`);
 
                     const favButton = document.getElementById("addToFav");
 
@@ -198,7 +201,7 @@ async function ensureUser() {
     if (userId) return userId;
 
     try {
-        const response = await fetch('/api/check_user');
+        const response = await fetch(appPath('/api/check_user'));
         const data = await response.json();
 
         if (data.exists && data.user_id) {
@@ -207,7 +210,7 @@ async function ensureUser() {
         }
 
         // No user then must go to consent page
-        window.location.href = "/";
+        window.location.href = appPath("/");
         return null;
 
     } catch (err) {
@@ -225,14 +228,11 @@ async function addToFavourites() {
         return;
     }
 
-    // Use the image source relative to the Flask server root
-    const imageUrl = modalImage.src.replace(window.location.origin, "");
-
     try {
         const paintingId = modalImage.dataset.id;
         const userId = localStorage.getItem("user_id");
 
-        const response = await fetch("/api/add-favourite", {
+        const response = await fetch(appPath("/api/add-favourite"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
