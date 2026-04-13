@@ -93,6 +93,7 @@ services:
       - "org.label-schema.role=frontend"
       - "traefik.enable=true"
       - "traefik.http.routers.artrecsys.rule=Host(`${DOMAIN:-localhost}`, `localhost`, `demos.ainewsanalysis.org`) && PathPrefix(`/artrecsys`)"
+      - "traefik.http.routers.artrecsys.middlewares=security-chain@file"
       - "traefik.http.services.artrecsys.loadbalancer.server.port=5000"
 
   artrecsys-db:
