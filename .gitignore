@@ -2,4 +2,4 @@ Website/paintings/
 Testing scripts/features_extracted.h5
 scrapWikiArt/data/img
 model_cache/hub/checkpoints/vgg19-dcbb9e9d.pth
-Testing scripts//feature_extraction_recysys_models_db/SBERT_embeddings_per_field.pkl
+Testing scripts/feature_extraction_recysys_models_db/SBERT_embeddings_per_field.pkl
