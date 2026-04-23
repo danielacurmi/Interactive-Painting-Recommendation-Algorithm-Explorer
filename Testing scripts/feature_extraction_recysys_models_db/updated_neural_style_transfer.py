@@ -41,7 +41,7 @@ def get_content_feature(image):
         if str(i) == content_layer:
             return x
         
-content_img = load_image('gatys_example.png')
+content_img = load_image(r'Testing scripts\feature_extraction_recysys_models_db\ref_photos\gatys_example.png')
 content_features = get_content_feature(content_img)
 
 def content_loss(gen_features, content_features):
@@ -58,7 +58,7 @@ def get_style_features(image, model, layers):
             features.append(x)
     return features
 
-style_img = load_image('george-morland_coast-scene-1792.jpg')
+style_img = load_image(r'Testing scripts\feature_extraction_recysys_models_db\ref_paintings\Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg')
 style_features = get_style_features(style_img, vgg, style_layers)
 
 # generated_img = torch.randn((1, 3, 512, 512), device=device, requires_grad=True)
@@ -79,6 +79,8 @@ def style_loss(generated_features, style_features):
         loss += torch.nn.functional.mse_loss(G_gen, G_style)
     return loss
 
+loss_history = {"total": [], "content": [], "style": []}
+
 def closure():
     optimizer.zero_grad()
 
@@ -96,13 +98,19 @@ def closure():
     total_loss = c_loss + 1e9*s_loss  # usually style loss weighted heavily
 
     total_loss.backward()
+    
+    # Track losses
+    loss_history["total"].append(total_loss.item())
+    loss_history["content"].append(c_loss.item())
+    loss_history["style"].append(s_loss.item())
+    
     return total_loss
 
 optimizer = optim.LBFGS([generated_img])
 
 for step in range(300):
-    loss = optimizer.step(closure)
-    print(f"Step {step}, Loss: {loss.item()}")
+    optimizer.step(closure)
+    print(f"Step {step}, Total Loss: {loss_history['total'][-1]:.4f}, Content Loss: {loss_history['content'][-1]:.4f}, Style Loss: {loss_history['style'][-1]:.4f}")
 
 
 def save_image(tensor, path):
@@ -115,7 +123,7 @@ def save_image(tensor, path):
     # Convert to PIL and save
     transforms.ToPILImage()(image).save(path)
 
-save_image(generated_img, "Neural_Style_Transfer-main\generated_image-4.jpg")
+save_image(generated_img, r"Testing scripts\feature_extraction_recysys_models_db\generated_images\generated_image_van_gogh.jpg")
 
 #It works better if the generated image start with content image and then backprop
 #Also rather than increasing the steps of the backprop you can increase the loss related to style, so a higher style_loss with low steps works the best
