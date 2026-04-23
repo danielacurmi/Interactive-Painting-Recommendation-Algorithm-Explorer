@@ -528,7 +528,8 @@ def get_gallery():
 #     })
 
 # folder for saving generated results
-GENERATED_DIR = os.path.join(os.getcwd(), "paintings\AI-Generated Images")
+paintings_dir = DATASET_PATH if DATASET_PATH.endswith("paintings") else os.path.join(DATASET_PATH, "paintings")
+GENERATED_DIR = os.path.join(paintings_dir, "AI-Generated Images")
 os.makedirs(GENERATED_DIR, exist_ok=True)
 
 @app.route('/style-transfer', methods=['POST'])
@@ -630,15 +631,6 @@ def extract_visual_features(image_rgb):
     return palette, palette_type    
 
 # Neural Style Transfer
-unloader = transforms.Compose([
-    transforms.Normalize(mean=[0.,0.,0.],
-                        std=[1/0.229,1/0.224,1/0.225]),
-    transforms.Normalize(mean=[-0.485, -0.456, -0.406],
-                        std=[1.,1.,1.]),
-    transforms.Lambda(lambda t: torch.clamp(t, 0, 1)),
-    transforms.ToPILImage()
-])
-
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(device)
 
@@ -656,25 +648,11 @@ transform = transforms.Compose([
     normalize
 ])
 
-unloader = transforms.Compose([
-    transforms.Normalize(
-        mean=[0, 0, 0],
-        std=[1/0.229, 1/0.224, 1/0.225]),
-    transforms.Normalize(
-        mean=[-0.485, -0.456, -0.406],
-        std=[1, 1, 1]),
-    transforms.ToPILImage()
-])
-
 def load_image(image_path):
     image = Image.open(image_path).convert('RGB')
     image = transform(image).unsqueeze(0)  # Add batch dimension
     return image.to(device) 
 
-def tensor_to_pil(tensor):
-    image = tensor.detach().cpu().clone().squeeze(0)
-    image = torch.clamp(image, 0, 1)  # ensure valid pixel range AFTER unnormalization
-    return unloader(image)
 
 def save_image(tensor, path):
     image = tensor.detach().cpu().clone().squeeze(0)
@@ -682,11 +660,6 @@ def save_image(tensor, path):
     image = image + torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
     image = torch.clamp(image, 0, 1)
     transforms.ToPILImage()(image).save(path)
-
-def save_gif(snapshots, path, duration=0.5):
-    frames = [np.array(img) for img in snapshots]
-    imageio.mimsave(path, frames, duration=duration)
-    print(f"Saved GIF to {path}")
 
 def gram_matrix(tensor):
     # tensor shape: (batch_size=1, channels, height, width)
