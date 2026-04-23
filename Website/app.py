@@ -7,14 +7,15 @@ from sklearn.cluster import KMeans
 from skimage.feature import local_binary_pattern
 from flask_cors import CORS
 import torch
-import torch.nn as nn
 import torch.optim as optim
 from torchvision import transforms, models
 from PIL import Image
 from datetime import datetime
 import psycopg2
 import psycopg2.extras
-from collections import defaultdict
+from collections import defaultdict 
+from torchvision.models import VGG19_Weights
+import imageio
 
 #from Image_Feature_extraction.ipynb import run_style_transfer
 
@@ -629,19 +630,6 @@ def extract_visual_features(image_rgb):
     return palette, palette_type    
 
 # Neural Style Transfer
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-# Utilities 
-imsize = 512 if torch.cuda.is_available() else 256  # choose smaller if no GPU
-
-loader = transforms.Compose([
-    transforms.Resize(imsize),
-    transforms.CenterCrop(imsize),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                        std =[0.229, 0.224, 0.225])
-])
-
 unloader = transforms.Compose([
     transforms.Normalize(mean=[0.,0.,0.],
                         std=[1/0.229,1/0.224,1/0.225]),
@@ -651,148 +639,163 @@ unloader = transforms.Compose([
     transforms.ToPILImage()
 ])
 
-def load_image(path, transform=loader, device=device):
-    image = Image.open(path).convert('RGB')
-    image = transform(image).unsqueeze(0)  # add batch dim
-    return image.to(device, torch.float)
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(device)
+
+image_size = 512 if torch.cuda.is_available() else 256  
+
+normalization_mean = [0.485, 0.456, 0.406]
+normalization_std = [0.229, 0.224, 0.225]
+normalize = transforms.Normalize(mean=normalization_mean,
+                                 std=normalization_std)
+
+transform = transforms.Compose([
+    transforms.Resize(image_size),              
+    transforms.CenterCrop(image_size),          
+    transforms.ToTensor(),
+    normalize
+])
+
+unloader = transforms.Compose([
+    transforms.Normalize(
+        mean=[0, 0, 0],
+        std=[1/0.229, 1/0.224, 1/0.225]),
+    transforms.Normalize(
+        mean=[-0.485, -0.456, -0.406],
+        std=[1, 1, 1]),
+    transforms.ToPILImage()
+])
+
+def load_image(image_path):
+    image = Image.open(image_path).convert('RGB')
+    image = transform(image).unsqueeze(0)  # Add batch dimension
+    return image.to(device) 
 
 def tensor_to_pil(tensor):
-    image = tensor.cpu().clone().squeeze(0)
+    image = tensor.detach().cpu().clone().squeeze(0)
+    image = torch.clamp(image, 0, 1)  # ensure valid pixel range AFTER unnormalization
     return unloader(image)
 
 def save_image(tensor, path):
-    image = tensor.cpu().clone().squeeze(0)
-    pil = unloader(image)
-    pil.save(path)
+    image = tensor.detach().cpu().clone().squeeze(0)
+    image = image * torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
+    image = image + torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
+    image = torch.clamp(image, 0, 1)
+    transforms.ToPILImage()(image).save(path)
 
-# Gram matrix 
-def gram_matrix(feature_maps):
-    # feature_maps: tensor of shape [batch=1, C, H, W]
-    b, c, h, w = feature_maps.size()
-    features = feature_maps.view(c, h * w)  # [C, H*W]
-    G = torch.mm(features, features.t())  # [C, C]
-    return G.div(c * h * w)  # normalize
+def save_gif(snapshots, path, duration=0.5):
+    frames = [np.array(img) for img in snapshots]
+    imageio.mimsave(path, frames, duration=duration)
+    print(f"Saved GIF to {path}")
 
-# Model to extract features 
-class VGGFeatures(nn.Module):
-    def __init__(self, vgg, content_layers, style_layers):
-        super().__init__()
-        self.vgg_layers = vgg.features.eval()
-        self.content_layers = content_layers
-        self.style_layers = style_layers
+def gram_matrix(tensor):
+    # tensor shape: (batch_size=1, channels, height, width)
+    b, c, h, w = tensor.size()
+    features = tensor.view(c, h * w)      # reshape to (channels, height*width)
+    G = torch.mm(features, features.t())  # compute Gram matrix (channels x channels)
+    return G / (2 * c * h * w)  
 
-    def forward(self, x):
-        content_feats = {}
-        style_feats = {}
-        cur = x
-        for name, layer in self.vgg_layers._modules.items():
-            cur = layer(cur)
-            # name is string index: '0','1',... we map to conv names by counting convs
-            # We'll use a mapping approach below (see usage) to pick nice names.
-            # For simplicity, the caller will select layers by module index strings.
-            if name in self.content_layers:
-                content_feats[name] = cur
-            if name in self.style_layers:
-                style_feats[name] = cur
-        return content_feats, style_feats
+# Load VGG19 model with pre-trained weights 
+vgg = models.vgg19(weights=VGG19_Weights.DEFAULT).features.to(device).eval()
+for param in vgg.parameters():
+    param.requires_grad = False
 
-# Loss functions (MSE) 
-mse_loss = nn.MSELoss()
+#content_layer = ['conv4_2']
+#style_layers = ['conv_1', 'conv_2', 'conv_3', 'conv_4', 'conv_5']
 
-def compute_content_loss(gen_feat, content_feat):
-    return mse_loss(gen_feat, content_feat)
+content_layer = '21' 
+style_layers = ['0', '5', '10', '19', '28']
 
-def compute_style_loss(gen_feat, style_gram):
-    gen_gram = gram_matrix(gen_feat)
-    return mse_loss(gen_gram, style_gram)
+def get_content_feature(image):
+    x = image
+    for i, layer in enumerate(vgg):
+        x = layer(x)
+        if str(i) == content_layer:
+            return x
+        
+def get_style_features(image, model, layers):
+    features = []
+    x = image
+    for i, layer in enumerate(model):
+        x = layer(x)
+        if str(i) in layers:
+            features.append(x)
+    return features
 
-def total_variation_loss(img):
-    # img [1,3,H,W]
-    x_diff = img[:, :, :, 1:] - img[:, :, :, :-1]
-    y_diff = img[:, :, 1:, :] - img[:, :, :-1, :]
-    return torch.sum(torch.abs(x_diff)) + torch.sum(torch.abs(y_diff))
+def compute_content_loss(generated_features, content_features):
+    return torch.nn.functional.mse_loss(generated_features, content_features)
 
-# Main style transfer function 
-def run_style_transfer(content_img_path, style_img_path,
-                    output_path='output.jpg',
-                    content_weight=1e0,
-                    style_weight=1e6,
-                    tv_weight=1e-6,
-                    num_steps=500,
+def compute_style_loss(generated_features, style_features):
+    loss = 0
+    for gen_feat, style_feat in zip(generated_features, style_features):
+        gram_generated = gram_matrix(gen_feat)
+        gram_style = gram_matrix(style_feat)
+        loss += torch.nn.functional.mse_loss(gram_generated, gram_style)
+    return loss
+
+def run_style_transfer(content_img_path, style_img_path, output_path, num_steps=300,
                     init_from_content=True,
-                    show_progress=False):
-    # Load images
+                    show_progress=True):
+    
+    # Load images 
     content_img = load_image(content_img_path)
     style_img = load_image(style_img_path)
 
-    # Load pretrained VGG19
-    vgg = models.vgg19(pretrained=True).to(device).eval()
-
-    # Choose layers by their module index in vgg.features
-    # Classic choices (PyTorch vgg module indices may differ between versions):
-    # conv1_1: 0, conv2_1: 5, conv3_1: 10, conv4_1: 19, conv4_2: 21, conv5_1: 28
-    style_layer_idxs = ['0', '5', '10', '19', '28']   # style layers
-    content_layer_idxs = ['21']                       # content layer (conv4_2)
-    feature_extractor = VGGFeatures(vgg, content_layer_idxs, style_layer_idxs)
-
-    # Precompute style features' Gram matrices
-    _, style_feats = feature_extractor(style_img)
-    style_grams = {layer: gram_matrix(feat).detach() for layer, feat in style_feats.items()}
-
-    # Precompute content features
-    content_feats, _ = feature_extractor(content_img)
-    content_targets = {layer: feat.detach() for layer, feat in content_feats.items()}
+    # Extract Content and Style features from both images, respectively 
+    style_features = get_style_features(style_img, vgg, style_layers)
+    content_features = get_content_feature(content_img)
 
     # Initialize generated image
     if init_from_content:
-        generated = content_img.clone().requires_grad_(True)
+        generated_img = content_img.clone().to(device).requires_grad_(True)
     else:
-        generated = torch.randn_like(content_img).requires_grad_(True)
+        generated_img = torch.randn((1, 3, 512, 512), device=device, requires_grad=True)
 
-    # Set optimizer: LBFGS or Adam
-    # When using ADAM less style and more accurate content - do more testing
-    optimizer = optim.Adam([generated], lr=0.02)
-    # optimizer = optim.LBFGS([generated], max_iter=20, lr=1.0)
-    # optimizer = optim.Adam([generated], lr=0.02)
+    optimizer = optim.LBFGS([generated_img])
 
-    run = [0]
-    while run[0] <= num_steps:
-        def closure():
-            optimizer.zero_grad()
-            gen_content_feats, gen_style_feats = feature_extractor(generated)
+    # Loss tracking for graph plot
+    losses = {"total": [], "content": [], "style": []}
+    current_losses = {"total": None, "content": None, "style": None}
+        
+    def closure():
+        optimizer.zero_grad()
 
-            # content loss
-            c_loss = 0.0
-            for layer in content_targets:
-                c_loss += compute_content_loss(gen_content_feats[layer], content_targets[layer])
-            c_loss = c_loss * content_weight
+        # Forward Pass
+        gen_content = get_content_feature(generated_img)
+        gen_style = get_style_features(generated_img, vgg, style_layers)
 
-            # style loss
-            s_loss = 0.0
-            for layer in style_grams:
-                s_loss += compute_style_loss(gen_style_feats[layer], style_grams[layer])
-            s_loss = s_loss * style_weight
+        # Compute style and content loss
+        c_loss = compute_content_loss(gen_content, content_features)
+        s_loss = compute_style_loss(gen_style, style_features)
+        s_loss = (1e9*s_loss)
 
-            # total variation loss (optional)
-            tv = tv_weight * total_variation_loss(generated)
+        total_loss = c_loss + s_loss
+        total_loss.backward()
 
-            loss = c_loss + s_loss + tv
-            loss.backward()
+        current_losses["total"] = total_loss.item()
+        current_losses["content"] = c_loss.item()
+        current_losses["style"] = s_loss.item()
 
-            if show_progress and run[0] % 50 == 0:
-                print(f"Step {run[0]}/{num_steps}, total_loss: {loss.item():.4f}, content: {c_loss.item():.4f}, style: {s_loss.item():.4f}, tv: {tv.item():.6f}")
+        return total_loss
 
-            run[0] += 1
-            return loss
-
+    for step in range(num_steps):
         optimizer.step(closure)
 
-    # Clamp output and save
+        losses["total"].append(current_losses["total"])
+        losses["content"].append(current_losses["content"])
+        losses["style"].append(current_losses["style"])
+
+        if show_progress:
+            print(f"Step {step}, Total Loss: {current_losses['total']:.4f}, "
+            f"Content Loss: {current_losses['content']:.4f}, "
+            f"Style Loss: {current_losses['style']:.4f}")
+        
+    # Save output 
     with torch.no_grad():
-        final_img = generated.clone().detach()
-        final_img = torch.clamp(final_img, -5, 5)  # keep in some numeric range
+        final_img = generated_img.detach().clone()
+
     save_image(final_img, output_path)
-    print(f"Saved stylized image to {output_path}")
+    print(f"Saved stylised image to {output_path}")
 
     return output_path
 
