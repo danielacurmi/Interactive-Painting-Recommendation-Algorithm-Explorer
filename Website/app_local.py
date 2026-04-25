@@ -67,7 +67,7 @@ def cold_start():
 def get_db_connection():
     conn = psycopg2.connect(
         host="localhost",
-        database="ART_RECSYS_DB",
+        database="ART_RECSYS_DB_LOCAL",
         user="postgres",
         password="Catmelon304!"
     )
