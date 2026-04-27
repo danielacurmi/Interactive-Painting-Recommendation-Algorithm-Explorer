@@ -106,6 +106,7 @@ def get_db_connection():
         password=db_password or "Catmelon304!"
     )
     return conn
+print(get_db_connection())
 
 # Helper Function for User IP address
 def get_user_ip():
