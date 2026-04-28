@@ -5,3 +5,4 @@ model_cache/hub/checkpoints/vgg19-dcbb9e9d.pth
 *.pkl
 *.pt
 *.h5
+*.npz
