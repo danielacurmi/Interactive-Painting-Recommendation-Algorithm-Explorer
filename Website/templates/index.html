@@ -7,7 +7,13 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css"
         integrity="sha512-z3gLpd7yknf1YoNbCzqRKc4qyor8gaKU1qmn+CShxbuBusANI9QpRohGBreCFkKxLhei6S9CQXFEbbKuqLg0DA=="
         crossorigin="anonymous" referrerpolicy="no-referrer" />
-    <script>window.ARTRECSYS_BASE_PATH = "{{ request.script_root }}";</script>
+    <script>
+        window.ARTRECSYS_BASE_PATH = "{{ request.script_root }}";
+
+        window.appPath = function(path) {
+            return (window.ARTRECSYS_BASE_PATH || "") + path;
+        };
+    </script>
 
     <!-- h1 font imports -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -19,9 +25,9 @@
 
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='loader_4.css') }}">
-    <script src="{{ url_for('static', filename='user_interaction.js') }}" defer></script>
     <script src="{{ url_for('static', filename='scripts.js') }}" defer></script>
-
+    <script src="{{ url_for('static', filename='user_interaction.js') }}" defer></script>
+    
     <title>Painting Recommendation System</title>
 </head>
 
@@ -45,11 +51,6 @@
             <button class="layered" data-href="{{ url_for('create_gallary') }}">
                 <span class="btn-inner">
                     <span class="btn-text">Create</span>
-                </span>
-            </button>
-            <button class="layered" data-href="{{ url_for('create_gallary') }}">
-                <span class="btn-inner">
-                    <span class="btn-text">HELLLOOOO</span>
                 </span>
             </button>
             <!-- <a href="#" class="icon"><i class="fas fa-bell"></i></a> 

@@ -2,9 +2,6 @@ window.onload = function() {
     createSession();
 };
 
-const BASE_PATH = window.ARTRECSYS_BASE_PATH || "";
-const appPath = (path) => `${BASE_PATH}${path}`;
-
 window.addEventListener("pagehide", endSession);
 
 const activityEvents = ["click", "mousemove", "keydown", "scroll"];
@@ -16,7 +13,7 @@ function updateActivity() {
     const session_id = localStorage.getItem("session_id");
     if (!session_id) return;
 
-    fetch(appPath("/api/update_activity"), {
+    fetch(window.appPath("/api/update_activity"), {
         method: "POST",
         headers: {
             "Content-Type": "application/json"
@@ -42,7 +39,7 @@ async function createSession() {
     }
 
     try {
-        const response = await fetch(appPath('/api/create_session'), {
+        const response = await fetch(window.appPath('/api/create_session'), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -78,7 +75,7 @@ function endSession() {
     }
         
     try{
-        navigator.sendBeacon(appPath("/api/end_session"),
+        navigator.sendBeacon(window.appPath("/api/end_session"),
         JSON.stringify({ session_id: session_id }));
         
         localStorage.removeItem("session_id");
