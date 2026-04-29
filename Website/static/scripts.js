@@ -1,5 +1,5 @@
 document.addEventListener("DOMContentLoaded", async () => {
-    await ensureUser();
+    await checkUser();
 });
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -191,14 +191,20 @@ function showToast(message = 'Message', ms = 3500) {
 }
 
 // Ensure user exists and is stored in localStorage
-async function ensureUser() {
+async function checkUser() {
     let userId = localStorage.getItem("user_id");
+    const clientId = getOrCreateClientId();
 
-    // If already exists → reuse
+    // If already mapped return
     if (userId) return userId;
 
     try {
-        const response = await fetch(window.appPath('/api/check_user'));
+        const response = await fetch(window.appPath('/api/check_user'), {
+            headers: {
+                "X-User-ID": clientId
+            }
+        });
+
         const data = await response.json();
 
         if (data.exists && data.user_id) {
@@ -206,7 +212,7 @@ async function ensureUser() {
             return data.user_id;
         }
 
-        // No user then must go to consent page
+        // No user exists → go to consent page
         window.location.href = window.appPath("/");
         return null;
 
@@ -253,6 +259,17 @@ async function addToFavourites() {
         console.error("Error adding favourite:", err);
         showToast("An error occurred while adding to favourites.");
     }
+}
+
+function getOrCreateClientId() {
+    let clientId = localStorage.getItem("client_id");
+
+    if (!clientId) {
+        clientId = crypto.randomUUID();
+        localStorage.setItem("client_id", clientId);
+    }
+
+    return clientId;
 }
 
 // TRIPLE DOT drop down menu for explainability 

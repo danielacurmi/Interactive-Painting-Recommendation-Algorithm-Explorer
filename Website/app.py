@@ -109,25 +109,35 @@ def get_db_connection():
 print(get_db_connection())
 
 # Helper Function for User IP address
-def get_user_ip():
-    """
-    Retrieve user's IP address from the request
-    """
-    # Handles proxy situations
-    if request.headers.get('X-Forwarded-For'):
-        ip = request.headers.get('X-Forwarded-For').split(',')[0]
-    else:
-        ip = request.remote_addr
-    return ip
+# def get_user_ip():
+#     """
+#     Retrieve user's IP address from the request
+#     """
+#     # Handles proxy situations
+#     if request.headers.get('X-Forwarded-For'):
+#         ip = request.headers.get('X-Forwarded-For').split(',')[0]
+#     else:
+#         ip = request.remote_addr
+#     return ip
+
+# This function couldn't be used becuase a public IP is not a reliable device identifier
+# due to NAT (multiple users behind one IP), mobile carrier gateways, VPNs, etc. 
+# Using it as a proxy for “user/device” will systematically collapse distinct users into the same identity.
+
+def get_client_id():
+    return request.headers.get("X-User-ID")
 
 # Check User
 @app.route("/api/check_user", methods=["GET"])
 def check_user():
     """
-    Determine if user IP already exists in database
+    Determine if user client ID already exists in database
     """
     try:
-        ip_address = get_user_ip()
+        client_id = get_client_id()
+
+        if not client_id:
+            return jsonify({"exists": False, "user_id": None})
 
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -135,10 +145,10 @@ def check_user():
         query = """
             SELECT user_id
             FROM users
-            WHERE ip_address = %s
+            WHERE client_id = %s
         """
 
-        cursor.execute(query, (ip_address,))
+        cursor.execute(query, (client_id,))
         result = cursor.fetchone()
 
         cursor.close()
@@ -158,26 +168,29 @@ def check_user():
     except Exception as e:
         print("ERROR in /api/check_user:", e)
         return jsonify({"error": str(e)}), 500
-    
+  
 # Create User
 @app.route("/api/create_user", methods=["POST"])
 def create_user():
     """
     Create new user after consent accepted
-    """
+    """  
     try:
-        ip_address = get_user_ip()
+        client_id = get_client_id()
+
+        if not client_id:
+            return jsonify({"success": False, "error": "Missing client_id"}), 400
 
         conn = get_db_connection()
         cursor = conn.cursor()
 
         insert_query = """
-            INSERT INTO users (consent_form, ip_address)
+            INSERT INTO users (consent_form, client_id)
             VALUES (%s, %s)
             RETURNING user_id
         """
 
-        cursor.execute(insert_query, (True, ip_address))
+        cursor.execute(insert_query, (True, client_id))
         user_id = cursor.fetchone()[0]
         conn.commit()
 
