@@ -208,75 +208,47 @@ def create_user():
         return jsonify({"success": False, "error": str(e)}), 500
 
 # Session Tracking
-@app.route("/api/create_session", methods=["POST"])
-def create_session():
+@app.route("/api/get_session", methods=["POST"])
+def api_get_session():
     try:
         data = request.get_json()
         user_id = data.get("user_id")
 
         if not user_id:
-            return jsonify({
-                "success": False,
-                "error": "user_id is required"
-            }), 400
+            return jsonify({"success": False}), 400
 
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        insert_query = """
-            INSERT INTO sessions (user_id, session_start)
-            VALUES (%s, CURRENT_TIMESTAMP)
-            RETURNING session_id
-        """
-
-        cursor.execute(insert_query, (user_id,))
-        session_id = cursor.fetchone()[0]
-
-        conn.commit()
-        cursor.close()
-        conn.close()
+        session_id = get_or_create_session(user_id)
 
         return jsonify({
             "success": True,
             "session_id": session_id
         })
+
     except Exception as e:
-        print("ERROR in /api/create_session:", e)
         return jsonify({"success": False, "error": str(e)}), 500
     
 @app.route("/api/end_session", methods=["POST"])
 def end_session():
     try:
-        data = request.get_json(silent=True)
-
-        if not data:
-            data = json.loads(request.data)
-
+        data = request.get_json(silent=True) or {}
         session_id = data.get("session_id")
 
         if not session_id:
-            return jsonify({
-                "success": False,
-                "error": "session_id is required"
-            }), 400
+            return jsonify({"success": False, "error": "session_id required"}), 400
 
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        update_query = """
+        cursor.execute("""
             UPDATE sessions
             SET session_end = CURRENT_TIMESTAMP
             WHERE session_id = %s AND session_end IS NULL
-        """
+        """, (session_id,))
 
-        cursor.execute(update_query, (session_id,))
         conn.commit()
 
         if cursor.rowcount == 0:
-            return jsonify({
-                "success": False,
-                "error": "Invalid or already ended session"
-            }), 400
+            return jsonify({"success": False, "error": "Invalid or already ended"}), 400
 
         cursor.close()
         conn.close()
@@ -284,26 +256,8 @@ def end_session():
         return jsonify({"success": True})
 
     except Exception as e:
-        print("ERROR in /api/end_session:", e)
+        print("ERROR end_session:", e)
         return jsonify({"success": False, "error": str(e)}), 500
-
-def close_expired_sessions(user_id):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    query = """
-        UPDATE sessions
-        SET session_end = CURRENT_TIMESTAMP
-        WHERE user_id = %s
-        AND session_end IS NULL
-        AND last_activity < CURRENT_TIMESTAMP - INTERVAL '2 minutes'
-    """
-
-    cursor.execute(query, (user_id,))
-    conn.commit()
-
-    cursor.close()
-    conn.close()
 
 @app.route("/api/update_activity", methods=["POST"])
 def update_activity():
@@ -333,6 +287,67 @@ def update_activity():
 
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+
+def get_or_create_session(user_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Check for active session within 24 hours
+    cursor.execute("""
+        SELECT session_id
+        FROM sessions
+        WHERE user_id = %s
+        AND session_end IS NULL
+        AND session_start >= CURRENT_TIMESTAMP - INTERVAL '1 day'
+        LIMIT 1
+    """, (user_id,))
+
+    row = cursor.fetchone()
+
+    if row:
+        session_id = row[0]
+    else:
+        # Expire any stale sessions
+        cursor.execute("""
+            UPDATE sessions
+            SET session_end = CURRENT_TIMESTAMP
+            WHERE user_id = %s
+            AND session_end IS NULL
+        """, (user_id,))
+
+        # Create new session
+        cursor.execute("""
+            INSERT INTO sessions (user_id, session_start, last_activity)
+            VALUES (%s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            RETURNING session_id
+        """, (user_id,))
+
+        session_id = cursor.fetchone()[0]
+
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+    return session_id
+
+def is_session_valid(session_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT 1
+        FROM sessions
+        WHERE session_id = %s
+        AND session_end IS NULL
+        AND session_start >= CURRENT_TIMESTAMP - INTERVAL '1 day'
+    """, (session_id,))
+
+    valid = cursor.fetchone() is not None
+
+    cursor.close()
+    conn.close()
+
+    return valid
 
 # Interaction Events Logging
 @app.route("/api/interaction_event_logging", methods=["GET"])
@@ -1222,7 +1237,7 @@ id_to_idx = {pid: i for i, pid in enumerate(image_ids)}
 
 def get_thumbnail_for_concept(cursor, concept_type, label, top_k=5):
     """
-    Returns a representative painting_id + image_path
+    Returns a representative painting_id and the respective image_path
     """
     painting_ids = fetch_paintings_by_concept(cursor, concept_type, label)
 
