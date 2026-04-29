@@ -196,7 +196,7 @@ async function checkUser() {
     const clientId = getOrCreateClientId();
 
     // If already mapped return
-    if (userId) return userId;
+    if (userId && userId !== "null") return userId;
 
     try {
         const response = await fetch(window.appPath('/api/check_user'), {
@@ -212,8 +212,7 @@ async function checkUser() {
             return data.user_id;
         }
 
-        // No user exists → go to consent page
-        window.location.href = window.appPath("/");
+        // No user exists
         return null;
 
     } catch (err) {

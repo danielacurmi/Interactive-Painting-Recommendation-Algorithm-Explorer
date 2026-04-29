@@ -97,6 +97,11 @@ async function acceptConsent() {
 }
 
 async function declineConsent() {
+    // Clear ALL identity state
+    localStorage.removeItem("client_id");
+    localStorage.removeItem("user_id");
+
+    // Redirect to welcome
     window.location.href = appPath("/");
 }
 

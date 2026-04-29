@@ -16,7 +16,11 @@ html, body {
 
 footer {
     position: fixed;
-    margin-top:43%;
+    bottom: 2%;  
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: center;
     background-color: #00000059;
     color:#fff;
     font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;

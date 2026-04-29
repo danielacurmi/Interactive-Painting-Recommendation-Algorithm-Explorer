@@ -10,3 +10,4 @@ torch
 torchvision
 Pillow
 psycopg2-binary
+joblib

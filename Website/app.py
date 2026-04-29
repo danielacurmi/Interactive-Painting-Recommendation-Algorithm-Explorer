@@ -16,6 +16,7 @@ import psycopg2.extras
 from collections import defaultdict 
 from torchvision.models import VGG19_Weights
 import imageio
+import joblib
 
 #from Image_Feature_extraction.ipynb import run_style_transfer
 
@@ -861,12 +862,23 @@ def sample_artists(artist_rows, k=8):
     selected = []
     used_ids = set()
 
+    def build_artist(aid, name):
+        thumb = generate_concept_thumbnail("artist", name)
+        return make_concept(
+            "artist",
+            name,
+            {
+                "artist_id": aid,
+                "thumbnail": thumb["thumbnail_path"] if thumb else None
+            }
+        )
+
     # Curated 
     for aid, name, _, _ in head:
         if len(selected) >= 3:
             break
         if aid not in used_ids:
-            selected.append(make_concept("artist", name, {"artist_id": aid}))
+            selected.append(build_artist(aid, name))
             used_ids.add(aid)
 
     # Diverse by movement
@@ -885,7 +897,7 @@ def sample_artists(artist_rows, k=8):
         random.shuffle(group)
         for aid, name in group:
             if aid not in used_ids:
-                selected.append(make_concept("artist", name, {"artist_id": aid}))
+                selected.append(build_artist(aid, name))
                 used_ids.add(aid)
                 break  # move to next group
 
@@ -895,7 +907,7 @@ def sample_artists(artist_rows, k=8):
         if len(selected) >= 8:
             break
         if aid not in used_ids:
-            selected.append(make_concept("artist", name, {"artist_id": aid}))
+            selected.append(build_artist(aid, name))
             used_ids.add(aid)
 
     # Fallback
@@ -904,7 +916,7 @@ def sample_artists(artist_rows, k=8):
         if len(selected) >= k:
             break
         if aid not in used_ids:
-            selected.append(make_concept("artist", name, {"artist_id": aid}))
+            selected.append(build_artist(aid, name))
             used_ids.add(aid)
 
     return selected[:k]
@@ -915,42 +927,53 @@ def sample_styles(styles_with_freq, k=7):
     selected = []
     used = set()
 
+    def build_style(style):
+        thumb = generate_concept_thumbnail("style", style)
+        return make_concept(
+            "style",
+            style,
+            {
+                "style": style,
+                "thumbnail": thumb["thumbnail_path"] if thumb else None
+            }
+        )
+
     # curated
-    for s, _ in head:
+    for style, _ in head:
         if len(selected) >= 2:
             break
-        if s not in used:
-            selected.append(make_concept("style", s))
-            used.add(s)
+        if style not in used:
+            selected.append(build_style(style))
+            used.add(style)
 
     # diverse
     mid = head[2:]
     random.shuffle(mid)
 
-    for s, _ in mid:
+    for style, _ in mid:
         if len(selected) >= 5:
             break
-        if s not in used:
-            selected.append(make_concept("style", s))
-            used.add(s)
+        if style not in used:
+            selected.append(build_style(style))
+            used.add(style)
 
     # long-tail
     random.shuffle(tail)
-    for s, _ in tail:
+    for style, _ in tail:
         if len(selected) >= 7:
             break
-        if s not in used:
-            selected.append(make_concept("style", s))
-            used.add(s)
+        if style not in used:
+            selected.append(build_style(style))
+            used.add(style)
 
     # fallback
     random.shuffle(styles_with_freq)
-    for s, _ in styles_with_freq:
+    for style, _ in styles_with_freq:
         if len(selected) >= k:
             break
-        if s not in used:
-            selected.append(make_concept("style", s))
-            used.add(s)
+        if style not in used:
+            selected.append(build_style(style))
+            used.add(style)   
 
     return selected[:k]
 
@@ -960,51 +983,78 @@ def sample_genres(genres_with_freq, k=7):
     selected = []
     used = set()
 
+    def build_genre(genre):
+        thumb = generate_concept_thumbnail("genre", genre)
+        return make_concept(
+            "genre",
+            genre,
+            {
+                "genre": genre,
+                "thumbnail": thumb["thumbnail_path"] if thumb else None
+            }
+        )
+
     # curated
-    for g, _ in head:
+    for genre, _ in head:
         if len(selected) >= 2:
             break
-        if g not in used:
-            selected.append(make_concept("genre", g))
-            used.add(g)
+        if genre not in used:
+            selected.append(build_genre(genre))
+            used.add(genre)
 
     # diverse
     mid = head[2:]
     random.shuffle(mid)
 
-    for g, _ in mid:
+    for genre, _ in mid:
         if len(selected) >= 5:
             break
-        if g not in used:
-            selected.append(make_concept("genre", g))
-            used.add(g)
+        if genre not in used:
+            selected.append(build_genre(genre))
+            used.add(genre)
 
     # long-tail
     random.shuffle(tail)
-    for g, _ in tail:
+    for genre, _ in tail:
         if len(selected) >= 7:
             break
-        if g not in used:
-            selected.append(make_concept("genre", g))
-            used.add(g)
+        if genre not in used:
+            selected.append(build_genre(genre))
+            used.add(genre)
 
     # fallback
     random.shuffle(genres_with_freq)
-    for g, _ in genres_with_freq:
+    for genre, _ in genres_with_freq:
         if len(selected) >= k:
             break
-        if g not in used:
-            selected.append(make_concept("genre", g))
-            used.add(g)
+        if genre not in used:
+            selected.append(build_genre(genre))
+            used.add(genre)
 
     return selected[:k]
 
 def sample_periods(k=5):
-    selected = random.sample(PERIODS, k)
-    return [
-        make_concept("period", name, {"start": start, "end": end})
-        for name, start, end in selected
-    ]
+    selected_periods = random.sample(PERIODS, k)
+
+    results = []
+
+    for name, start, end in selected_periods:
+        thumb = generate_concept_thumbnail(
+            "period",
+            {"start": start, "end": end}
+        )
+
+        results.append(make_concept(
+            "period",
+            name,
+            {
+                "start": start,
+                "end": end,
+                "thumbnail": thumb["thumbnail_path"] if thumb else None
+            }
+        ))
+
+    return results
 
 @app.route("/api/get_box_titles", methods=["GET"])
 def get_box_titles():
@@ -1038,24 +1088,219 @@ def get_box_titles():
     except Exception as e:
         print("ERROR in /api/get_box_titles:", e)
         return jsonify({"success": False, "error": str(e)}), 500
+    
+@app.route("/api/has_preferences", methods=["GET"])
+def has_preferences():
+    try:
+        client_id = get_client_id()
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        query = """
+            SELECT u.user_id
+            FROM users u
+            JOIN cold_start_preferences p ON u.user_id = p.user_id
+            WHERE u.client_id = %s
+            LIMIT 1
+        """
+
+        cursor.execute(query, (client_id,))
+        result = cursor.fetchone()
+
+        cursor.close()
+        conn.close()
+
+        return jsonify({
+            "has_preferences": bool(result)
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/api/log_user_preferences", methods=["POST"])
 def log_user_preferences():
     try:
+        data = request.get_json()
+
+        user_id = data.get("user_id")
+        preferences = data.get("preferences", [])
+
+        if not user_id or not preferences:
+            return jsonify({"success": False, "error": "Missing data"}), 400
+
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # TO-DO:
-        # log user preferences from cold start page
+        insert_query = """
+            INSERT INTO cold_start_preferences
+            (user_id, preference_type, preference_label)
+            VALUES (%s, %s, %s)
+        """
 
-        return jsonify({
-            "success": True
-        })
+        for pref in preferences:
+            p_type = pref.get("type")
+            label = pref.get("label")
+
+            cursor.execute(insert_query, (
+                user_id,
+                p_type,
+                label
+            ))
+
+        cursor.execute("""
+            UPDATE users
+            SET has_completed_cold_start = TRUE
+            WHERE user_id = %s
+        """, (user_id,))
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return jsonify({"success": True})
 
     except Exception as e:
         print("ERROR in /api/log_user_preferences:", e)
         return jsonify({"success": False, "error": str(e)}), 500
+
+# Thumbnails per concept in cold-start page
+def fetch_paintings_by_concept(cursor, concept_type, label):
+    """
+    Returns painting_ids filtered by concept type
+    """
     
+    if concept_type == "artist":
+        cursor.execute("""
+            SELECT painting_id
+            FROM paintings_and_artists_metadata_bert
+            WHERE artist = %s
+        """, (label,))
+
+    elif concept_type == "genre":
+        cursor.execute("""
+            SELECT painting_id
+            FROM paintings_and_artists_metadata_bert
+            WHERE genre = %s
+        """, (label,))
+
+    elif concept_type == "style":
+        cursor.execute("""
+            SELECT painting_id
+            FROM paintings_and_artists_metadata_bert
+            WHERE art_style = %s
+        """, (label,))
+
+    elif concept_type == "period":
+        start = label["start"]
+        end = label["end"]
+
+        if end == "Present":
+            cursor.execute("""
+                SELECT painting_id
+                FROM paintings_and_artists_metadata_bert
+                WHERE year_created >= %s
+            """, (start,))
+        else:
+            cursor.execute("""
+                SELECT painting_id
+                FROM paintings_and_artists_metadata_bert
+                WHERE year_created BETWEEN %s AND %s
+            """, (start, end))
+
+    else:
+        return []
+
+    return [r[0] for r in cursor.fetchall()]
+
+image_tensors = joblib.load('image_tensors.pkl')
+image_ids = joblib.load('ids.pkl')
+image_matrix = np.array(image_tensors)  # (N, 512)
+image_matrix = image_matrix / np.linalg.norm(image_matrix, axis=1, keepdims=True)
+
+id_to_idx = {pid: i for i, pid in enumerate(image_ids)}
+
+def get_thumbnail_for_concept(cursor, concept_type, label, top_k=5):
+    """
+    Returns a representative painting_id + image_path
+    """
+    painting_ids = fetch_paintings_by_concept(cursor, concept_type, label)
+
+    if len(painting_ids) == 0:
+        return None
+
+    # Step 1: filter valid embeddings
+    valid_indices = [
+        id_to_idx[pid]
+        for pid in painting_ids
+        if pid in id_to_idx
+    ]
+
+    if len(valid_indices) == 0:
+        return None
+
+    subset_embeddings = image_matrix[valid_indices]
+
+    # Step 2: centroid
+    centroid = np.mean(subset_embeddings, axis=0)
+    centroid = centroid / np.linalg.norm(centroid)
+
+    # Step 3: similarity to centroid
+    sims = subset_embeddings @ centroid.T
+
+    # Step 4: top-k nearest
+    top_k_idx = np.argsort(sims)[-top_k:]
+
+    # Step 5: random pick (bias reduction)
+    chosen_local_idx = np.random.choice(top_k_idx)
+
+    chosen_painting_id = painting_ids[chosen_local_idx]
+
+    return chosen_painting_id
+
+def build_painting_url(image_path):
+    normalized = image_path.replace("\\", "/").lstrip("/")
+
+    # ensure no duplicate "paintings/"
+    if normalized.startswith("paintings/"):
+        normalized = normalized[len("paintings/"):]
+
+    return f"{BASE_PATH}/paintings/{normalized}"
+
+def get_thumbnail_path(cursor, painting_id):
+    cursor.execute("""
+        SELECT image_path
+        FROM paintings_and_artists_metadata_bert
+        WHERE painting_id = %s
+    """, (painting_id,))
+
+    row = cursor.fetchone()
+    if not row:
+        return None
+
+    return build_painting_url(row[0])
+
+def generate_concept_thumbnail(concept_type, label):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        painting_id = get_thumbnail_for_concept(cursor, concept_type, label)
+
+        if not painting_id:
+            return None
+
+        image_path = get_thumbnail_path(cursor, painting_id)
+
+        return {
+            "painting_id": painting_id,
+            "thumbnail_path": image_path
+        }
+
+    finally:
+        cursor.close()
+        conn.close()
+
 # TO-RUN: python app.py
 if __name__ == "__main__":
     app.run(debug=True)

@@ -6,7 +6,11 @@ html, body {
 
 footer {
     position: fixed;
-    margin-top:43%;
+    bottom: 2%;  
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: center;
     background-color: #00000059;
     color:#fff;
     font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -66,6 +70,7 @@ h3 {
   position: relative;
   border-radius: 25px;
   border-color: rgba(0, 255, 255, 0);
+  border-width: 5px;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -81,8 +86,15 @@ h3 {
   box-shadow: 0 12px 25px rgba(0, 0, 0, 0.89);
 }
 
-.board-label{
+/* Title should sit above */
+.board-label {
+    position: relative;
     font-size: small;
+    z-index: 2;
+    color: white;
+    font-weight: 600;
+    text-align: center;
+    text-shadow: 0 2px 6px rgba(0,0,0,0.7);
 }
 
 /* Create Board Layout */
@@ -114,4 +126,28 @@ h3 {
 .btn:disabled { 
     opacity:0.45; 
     cursor:not-allowed; 
+}
+
+/* Wrapper controls layering */
+.thumbnail-wrapper {
+    position: absolute;
+    inset: 0; /* top:0 left:0 right:0 bottom:0 */
+    z-index: 0;
+}
+
+/* Image styling */
+.board-thumbnail {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;        /* fills without distortion */
+    object-position: center;  /* center crop */
+    display: block;
+}
+
+/* Dark overlay (tint) */
+.thumbnail-wrapper::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.35); /* adjust intensity */
 }
