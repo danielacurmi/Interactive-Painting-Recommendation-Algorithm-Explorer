@@ -1,8 +1,13 @@
+let isColdStartPhase = true;
+let userConcepts = [];
+
 document.addEventListener("DOMContentLoaded", async () => {
     await checkUser();
+    await loadUserPreferences();
+    await initRecommendations();
 });
 
-document.addEventListener("DOMContentLoaded", () => {
+function initRecommendations() {
     let fetching = false;
     const container = document.getElementById('container');
     
@@ -15,12 +20,51 @@ document.addEventListener("DOMContentLoaded", () => {
         const fetchImageData = async () => {
             fetching = true;
             document.getElementById('loader').style.display = 'block';
-            const response = await fetch(window.appPath(`/api/random-images/30`));
-            const images = await response.json();
+
+            let images = [];
+
+            try {
+                // Initial set of recommendations
+                if (isColdStartPhase) {
+                    console.log("Fetching cold start images...");
+
+                    const response = await fetch(window.appPath(`/api/cold-start-images`), {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({
+                            concepts: userConcepts
+                        })
+                    });
+
+                    const data = await response.json();
+
+                    if (data.success && data.results) {
+                        images = data.results.flatMap(r => r.paintings);
+                    }
+
+                    isColdStartPhase = false; // switch to random after first batch
+                } 
+                // SUBSEQUENT LOADS → RANDOM
+                else {
+                    console.log("Fetching random images...");
+
+                    const response = await fetch(window.appPath(`/api/random-images/30`));
+                    images = await response.json();
+                }
+
+            } catch (err) {
+                console.error("Error fetching images:", err);
+            }
+
             fetching = false;
+
             return images.map(img => ({
                 id: img.painting_id,
-                url: window.appPath(`/${String(img.image_path).replace(/^\/+/, "")}`)
+                url: img.image_url 
+                    ? img.image_url   // cold start format
+                    : window.appPath(`/${String(img.image_path).replace(/^\/+/, "")}`) // random format
             }));
         };
 
@@ -160,7 +204,7 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         };
 
-        loadImages();
+        loadImages(); 
         window.addEventListener('scroll', handleScroll);
 
         // Close modal
@@ -195,7 +239,7 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         });
     });
-});
+};
 
 const toast = document.getElementById('toast');
 function showToast(message = 'Message', ms = 3500) {
@@ -407,6 +451,45 @@ function getOrCreateClientId() {
     }
 
     return clientId;
+}
+
+async function loadUserPreferences() {
+    try {
+        const response = await fetch(window.appPath("/api/get_user_preferences"), {
+            headers: {
+                "X-User-ID": localStorage.getItem("client_id")
+            }
+        });
+
+        const data = await response.json();
+        if (data.success && data.preferences) {
+            userConcepts = data.preferences.map(pref => {
+                if (pref.type && pref.label) {
+                    return {
+                        type: pref.type,
+                        label: pref.label
+                    };
+                }
+                if (pref.preference_type && pref.preference_label) {
+                    return {
+                        type: pref.preference_type,
+                        label: pref.preference_label
+                    };
+                }
+                if (Array.isArray(pref)) {
+                    return {
+                        type: pref[0],
+                        label: pref[1]
+                    };
+                }
+                console.warn("Unknown preference format:", pref);
+                return null;
+            }).filter(Boolean); 
+        }
+        console.log("Loaded concepts:", userConcepts);
+    } catch (err) {
+        console.error("Failed to load user preferences:", err);
+    }
 }
 
 // TRIPLE DOT drop down menu for explainability 

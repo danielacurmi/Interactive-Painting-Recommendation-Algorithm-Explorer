@@ -17,6 +17,7 @@ from collections import defaultdict
 from torchvision.models import VGG19_Weights
 import imageio
 import joblib
+import traceback
 
 #from Image_Feature_extraction.ipynb import run_style_transfer
 
@@ -488,7 +489,7 @@ def random_images(n):
     cur.execute("""
         SELECT painting_id, image_path
         FROM paintings
-        ORDER BY RANDOM()
+        
         LIMIT %s;
     """, (n,))
 
@@ -498,6 +499,87 @@ def random_images(n):
     conn.close()
 
     return jsonify(rows)
+
+@app.route("/api/cold-start-images", methods=["POST"])
+def cold_start_images():
+    try:
+        data = request.get_json()
+        print("RAW REQUEST DATA:", data)
+        if not data:
+            print("ERROR: No JSON body received")
+            return jsonify({"success": False, "error": "No JSON body"}), 400
+
+        concepts = data.get("concepts", []) 
+        print("CONCEPTS RECEIVED:", concepts)
+
+        if not concepts:
+            return jsonify({"success": False, "error": "No concepts provided"}), 400
+
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        all_painting_ids = []
+        results = []
+        seen = set()
+
+        # Get top-k per concept
+        results = []
+
+        for concept in concepts:
+            print("\n--- PROCESSING CONCEPT ---")
+            print("RAW CONCEPT:", concept)
+
+            concept_type = concept.get("type")
+            label = concept.get("label")
+
+            print("TYPE:", concept_type)
+            print("LABEL:", label)
+
+            _, top_ids, _ = get_thumbnail_for_concept(cursor, concept_type, label, top_k=10)
+
+            if not top_ids:
+                continue
+            
+            # Feth image paths
+            cursor.execute("""
+                SELECT painting_id, image_path
+                FROM paintings_and_artists_metadata_bert
+                WHERE painting_id = ANY(%s)
+                ORDER BY array_position(%s, painting_id)
+            """, (top_ids, top_ids))
+
+            rows = cursor.fetchall()
+
+            paintings = []
+            for row in rows:
+                paintings.append({
+                    "painting_id": row["painting_id"],
+                    "image_url": build_painting_url(row["image_path"])
+                })
+
+            results.append({
+                "concept": {
+                    "type": concept_type,
+                    "label": label
+                },
+                "paintings": paintings
+            })
+
+        print(f"[DB QUERY] type={concept_type}, label='{label}'")
+        print(f"[DB RESULT COUNT] {len(results)}")
+
+        cursor.close()
+        conn.close()
+
+        return jsonify({
+            "success": True,
+            "results": results
+        })
+
+    except Exception as e:
+        print("ERROR in /api/cold-start-images:")
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/paintings/<path:filename>')
 def serve_painting(filename):
@@ -1256,13 +1338,43 @@ def log_user_preferences():
     except Exception as e:
         print("ERROR in /api/log_user_preferences:", e)
         return jsonify({"success": False, "error": str(e)}), 500
+    
+@app.route("/api/get_user_preferences", methods=["GET"])
+def get_user_preferences():
+    try:
+        client_id = get_client_id()
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        query = """
+            SELECT 
+                preference_type AS type,
+                preference_label AS label
+            FROM cold_start_preferences p
+            JOIN users u ON p.user_id = u.user_id
+            WHERE u.client_id = %s
+        """
+
+        cursor.execute(query, (client_id,))
+        rows = cursor.fetchall()
+
+        cursor.close()
+        conn.close()
+
+        return jsonify({
+            "success": True,
+            "preferences": rows
+        })
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 # Thumbnails per concept in cold-start page
 def fetch_paintings_by_concept(cursor, concept_type, label):
     """
     Returns painting_ids filtered by concept type
     """
-    
     if concept_type == "artist":
         cursor.execute("""
             SELECT painting_id
@@ -1304,7 +1416,14 @@ def fetch_paintings_by_concept(cursor, concept_type, label):
     else:
         return []
 
-    return [r[0] for r in cursor.fetchall()]
+    rows = cursor.fetchall()
+    painting_ids = [
+        r["painting_id"] if isinstance(r, dict) else r[0]
+        for r in rows
+    ]
+    print("PAINTING IDS TYPE SAMPLE:", type(painting_ids[0]), painting_ids[:5])
+
+    return painting_ids
 
 image_tensors = joblib.load('image_tensors.pkl')
 image_ids = joblib.load('ids.pkl')
@@ -1320,36 +1439,36 @@ def get_thumbnail_for_concept(cursor, concept_type, label, top_k=5):
     painting_ids = fetch_paintings_by_concept(cursor, concept_type, label)
 
     if len(painting_ids) == 0:
-        return None
+        return None, [], None
 
-    # Step 1: filter valid embeddings
+    # Filter valid embeddings
     valid_indices = [
-        id_to_idx[pid]
+        (pid, id_to_idx[pid])
         for pid in painting_ids
         if pid in id_to_idx
     ]
 
     if len(valid_indices) == 0:
-        return None
+        return None, [], None
+    
+    pids, indices = zip(*valid_indices)
+    subset_embeddings = image_matrix[list(indices)]
+    print(len(valid_indices))
 
-    subset_embeddings = image_matrix[valid_indices]
-
-    # Step 2: centroid
+    # Centroid i.e. average embedding vector of the concept
     centroid = np.mean(subset_embeddings, axis=0)
     centroid = centroid / np.linalg.norm(centroid)
 
-    # Step 3: similarity to centroid
-    sims = subset_embeddings @ centroid.T
+    # Similarity to centroid and top-k nearest
+    scores = subset_embeddings @ centroid.T
+    top_k_idx = np.argsort(scores)[-top_k:][::-1]
+    top_k_painting_ids = [pids[i] for i in top_k_idx]
 
-    # Step 4: top-k nearest
-    top_k_idx = np.argsort(sims)[-top_k:]
-
-    # Step 5: random pick (bias reduction)
+    # Random pick from top-k (bias reduction)
     chosen_local_idx = np.random.choice(top_k_idx)
+    chosen_painting_id = pids[chosen_local_idx]
 
-    chosen_painting_id = painting_ids[chosen_local_idx]
-
-    return chosen_painting_id
+    return chosen_painting_id, top_k_painting_ids, scores 
 
 def build_painting_url(image_path):
     normalized = image_path.replace("\\", "/").lstrip("/")
@@ -1378,7 +1497,7 @@ def generate_concept_thumbnail(concept_type, label):
     cursor = conn.cursor()
 
     try:
-        painting_id = get_thumbnail_for_concept(cursor, concept_type, label)
+        painting_id, _, _ = get_thumbnail_for_concept(cursor, concept_type, label)
 
         if not painting_id:
             return None
