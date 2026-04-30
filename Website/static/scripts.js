@@ -42,6 +42,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
             // Click to open image modal, uses data from backend app.py
             img.addEventListener("click", async () => {
+                const paintingId = parseInt(img.dataset.id);
                 const loader = document.getElementById('loader');
                 const title = document.getElementById("modalTitle");
                 const artist = document.getElementById("modalArtist");
@@ -80,6 +81,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
                 // Show modal with the new image
                 modalOverlay.style.display = "flex";
+                console.log(`CLICK on painting ${paintingId}`);
+                logInteraction(paintingId, "click", true);
+                startViewing(paintingId)
 
                 try {
                     modalImage.dataset.id = img.dataset.id;
@@ -93,6 +97,10 @@ document.addEventListener("DOMContentLoaded", () => {
                     // Reset the favourite button
                     favButton.innerHTML = '<i class="fa-regular fa-star"></i> Add to Favourites';
                     favButton.disabled = false;
+
+                    document.querySelectorAll('input[name="rate"]').forEach(radio => {
+                        radio.checked = false;
+                    });
 
                     title.textContent = data.title;
 
@@ -157,10 +165,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Close modal
         closeModal.addEventListener("click", () => {
+            const paintingId = parseInt(modalImage.dataset.id);
+            endViewing(paintingId);
             modalOverlay.style.display = "none";
         });
         modalOverlay.addEventListener("click", (e) => {
-            if (e.target === modalOverlay) modalOverlay.style.display = "none";
+            if (e.target === modalOverlay) {
+                const paintingId = parseInt(modalImage.dataset.id);
+                endViewing(paintingId); 
+                modalOverlay.style.display = "none";
+            }
         });
     }
     // Select both types of buttons and attach the same click behavior
@@ -227,21 +241,13 @@ const activeViews = {};
 
 // Logger
 function logInteraction(painting_id, event_type, value = null) {
-    // Get the image currently displayed in the modal
-    const modalImage = document.getElementById("modalImage");
-    if (!modalImage || !modalImage.src) {
-        showToast("No image selected to rate.");
-        return;
-    }
-
-    const paintingId = modalImage.dataset.id;
     const user_id = localStorage.getItem("user_id");
     const session_id = localStorage.getItem("session_id");
 
     const payload = {
         session_id: parseInt(session_id),
         user_id: parseInt(user_id),
-        painting_id: parseInt(paintingId),
+        painting_id: parseInt(painting_id),
         event_type: event_type,
         value: value
     };
@@ -279,31 +285,32 @@ function endViewing(painting_id) {
     delete activeViews[painting_id];
 }
 
-document.addEventListener("click", function(e) {
-    const el = e.target.closest(".painting");
-    if (!el) return;
-    const painting_id = parseInt(el.dataset.paintingId);
-    console.log(`CLICK on painting ${painting_id}`);
-    logInteraction(painting_id, "click", 1);
+document.querySelectorAll('input[name="rate"]').forEach(radio => {
+    radio.addEventListener("change", function () {
+        const rating = parseInt(this.value);
+        ratePainting(rating);
+    });
 });
 
 async function ratePainting(rating) {
-    // Get the image currently displayed in the modal
     const modalImage = document.getElementById("modalImage");
-    if (!modalImage || !modalImage.src) {
+
+    if (!modalImage || !modalImage.dataset.id) {
         showToast("No image selected to rate.");
         return;
     }
 
-    try {
-        const paintingId = modalImage.dataset.id;
-        console.log(`RATING: ${paintingId} -> ${rating}`);
-        logInteraction(paintingId, "rating", rating);
-        showToast(`Rated ${rating} stars`);
+    const paintingId = parseInt(modalImage.dataset.id);
 
-    } catch (err) {
-        console.error("Rating error:", err);
+    if (!rating || rating < 1 || rating > 5) {
+        console.warn("Invalid rating:", rating);
+        return;
     }
+
+    console.log(`RATING: ${paintingId} -> ${rating}`);
+
+    logInteraction(paintingId, "rating", rating);
+    showToast(`Rated ${rating} stars!`);
 }
 
 async function submitReview() {
@@ -339,7 +346,7 @@ async function markNotInterested() {
     try {
         const paintingId = modalImage.dataset.id;
         console.log(`NOT INTERESTED: ${paintingId}`);
-        logInteraction(paintingId, "not_interested", 1);
+        logInteraction(paintingId, "not_interested", true);
         showToast("Marked as not interested... fewer paintings like this will be shown.");
         const btn = document.getElementById("notInterested");
         btn.disabled = true;
@@ -380,7 +387,7 @@ async function addToFavourites() {
             const favButton = document.getElementById("addToFav");
             favButton.innerHTML = '<i class="fa-solid fa-star"></i> Added';
             favButton.disabled = true;
-            logInteraction(paintingId, "favourite", 1);
+            logInteraction(paintingId, "favourite", true);
         } else {
             console.error("Failed to add favourite:", response.statusText);
             showToast("Failed to add favourite.");

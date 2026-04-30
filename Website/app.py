@@ -361,15 +361,15 @@ EVENT_TYPES = {
     "skip"
 }
 
-def log_event(session_id, user_id, painting_id, event_type, metadata=None):
+def log_event(session_id, user_id, painting_id, event_type, event_value, metadata=None):
     conn = get_db_connection()
     cur = conn.cursor()
 
     cur.execute("""
-        INSERT INTO interaction_events (session_id, user_id, painting_id, event_type, timestamp)
-        VALUES (%s, %s, %s, %s, NOW())
+        INSERT INTO interaction_events (session_id, user_id, painting_id, event_type, event_value, timestamp)
+        VALUES (%s, %s, %s, %s, %s, NOW())
         RETURNING event_id;
-    """, (session_id, user_id, painting_id, event_type))
+    """, (session_id, user_id, painting_id, event_type, event_value))
 
     event_id = cur.fetchone()[0]
 
@@ -401,29 +401,29 @@ def update_summary(session_id, user_id, painting_id, event_type, value=None):
     if event_type == "view_end":
         cur.execute("""
             UPDATE interaction_summary
-            SET viewing_time_seconds = viewing_time_seconds + %s
+            SET viewing_time_seconds = COALESCE(viewing_time_seconds, 0) + %s
             WHERE session_id=%s AND user_id=%s AND painting_id=%s;
         """, (value, session_id, user_id, painting_id))
 
     elif event_type == "favourite":
         cur.execute("""
             UPDATE interaction_summary
-            SET favourite = 1
+            SET favourite = True
             WHERE session_id=%s AND user_id=%s AND painting_id=%s;
         """, (session_id, user_id, painting_id))
 
     elif event_type == "click":
         cur.execute("""
             UPDATE interaction_summary
-            SET click = 1,
-                skip = 0
+            SET click = True,
+                skip = False
             WHERE session_id=%s AND user_id=%s AND painting_id=%s;
         """, (session_id, user_id, painting_id))
 
     elif event_type == "save_gallary":
         cur.execute("""
             UPDATE interaction_summary
-            SET save_gallary = 1
+            SET save_gallary = True
             WHERE session_id=%s AND user_id=%s AND painting_id=%s;
         """, (session_id, user_id, painting_id))
 
@@ -437,7 +437,7 @@ def update_summary(session_id, user_id, painting_id, event_type, value=None):
     elif event_type == "not_interested":
         cur.execute("""
             UPDATE interaction_summary
-            SET not_interested = 1
+            SET not_interested = True
             WHERE session_id=%s AND user_id=%s AND painting_id=%s;
         """, (session_id, user_id, painting_id))
 
@@ -455,25 +455,29 @@ def update_summary(session_id, user_id, painting_id, event_type, value=None):
 # Interaction Events Logging and Summary
 @app.route("/api/interaction_event_logging", methods=["POST"])
 def interaction_event_logging():
-    data = request.json
+    try:
+        data = request.json
 
-    session_id = data.get("session_id")
-    user_id = data.get("user_id")
-    painting_id = data.get("painting_id")
-    event_type = data.get("event_type")
-    value = data.get("value")  # optional (rating, time, review)
+        session_id = data.get("session_id")
+        user_id = data.get("user_id")
+        painting_id = data.get("painting_id")
+        event_type = data.get("event_type")
+        value = data.get("value")  
 
-    if event_type not in EVENT_TYPES:
-        return jsonify({"error": "Invalid event type"}), 400
+        if event_type not in EVENT_TYPES:
+            return jsonify({"error": "Invalid event type"}), 400
 
-    event_id = log_event(session_id, user_id, painting_id, event_type)
-    ensure_summary(session_id, user_id, painting_id)
-    update_summary(session_id, user_id, painting_id, event_type, value)
+        event_id = log_event(session_id, user_id, painting_id, event_type, value)
+        ensure_summary(session_id, user_id, painting_id)
+        update_summary(session_id, user_id, painting_id, event_type, value)
 
-    return jsonify({
-        "status": "success",
-        "event_id": event_id
-    })
+        return jsonify({
+            "status": "success",
+            "event_id": event_id
+        })
+    except Exception as e:
+        print("ERROR:", e)   
+        return jsonify({"error": str(e)}), 500
 
 # Get painting and artist metadata for each painting along with the image from the respective file path
 @app.route("/api/random-images/<int:n>")
