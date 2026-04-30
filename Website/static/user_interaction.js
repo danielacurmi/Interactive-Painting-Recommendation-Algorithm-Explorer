@@ -65,3 +65,4 @@ function endSession() {
 
     localStorage.removeItem("session_id");
 }
+

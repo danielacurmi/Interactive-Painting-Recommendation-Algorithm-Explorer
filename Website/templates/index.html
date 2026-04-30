@@ -132,7 +132,7 @@
                     <button id="addToFav" onclick="addToFavourites()">
                         <i class="fa-sm far fa-star"></i> Add To Favourites
                     </button>
-                    <button id="notInterested" onclick="notInterested()">
+                    <button id="notInterested" onclick="markNotInterested()">
                         <i class="fa-sm fas fa-ban"></i> Not Interested
                     </button>
                 </div>
@@ -148,7 +148,7 @@
                     <input type="radio" id="star1" name="rate" value="1" />
                     <label for="star1" title="text">1 star</label>
                 </div>
-                <input id="review" type="text" placeholder="Write a review... ">
+                <input id="review" type="text" placeholder="Write a review... " onkeydown="if(event.key==='Enter') submitReview()">
             </div>
         </div>
     </div>

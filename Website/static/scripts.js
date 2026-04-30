@@ -221,6 +221,136 @@ async function checkUser() {
     }
 }
 
+// Track active viewing sessions per painting
+const activeViews = {}; 
+// { painting_id: start_timestamp }
+
+// Logger
+function logInteraction(painting_id, event_type, value = null) {
+    // Get the image currently displayed in the modal
+    const modalImage = document.getElementById("modalImage");
+    if (!modalImage || !modalImage.src) {
+        showToast("No image selected to rate.");
+        return;
+    }
+
+    const paintingId = modalImage.dataset.id;
+    const user_id = localStorage.getItem("user_id");
+    const session_id = localStorage.getItem("session_id");
+
+    const payload = {
+        session_id: parseInt(session_id),
+        user_id: parseInt(user_id),
+        painting_id: parseInt(paintingId),
+        event_type: event_type,
+        value: value
+    };
+
+    console.log("Sending event:", payload);
+
+    fetch(appPath("/api/interaction_event_logging"), {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
+    })
+    .then(res => res.json())
+    .then(data => {
+        console.log("Server response:", data);
+    })
+    .catch(err => {
+        console.error("Logging error:", err);
+    });
+}
+
+function startViewing(painting_id) {
+    if (activeViews[painting_id]) return;
+    activeViews[painting_id] = Date.now();
+    console.log(`View START: ${painting_id}`);
+    logInteraction(painting_id, "view_start");
+}
+
+function endViewing(painting_id) {
+    if (!activeViews[painting_id]) return;
+    const duration = (Date.now() - activeViews[painting_id]) / 1000;
+    console.log(`View END: ${painting_id}, duration: ${duration}s`);
+    logInteraction(painting_id, "view_end", duration);
+    delete activeViews[painting_id];
+}
+
+document.addEventListener("click", function(e) {
+    const el = e.target.closest(".painting");
+    if (!el) return;
+    const painting_id = parseInt(el.dataset.paintingId);
+    console.log(`CLICK on painting ${painting_id}`);
+    logInteraction(painting_id, "click", 1);
+});
+
+async function ratePainting(rating) {
+    // Get the image currently displayed in the modal
+    const modalImage = document.getElementById("modalImage");
+    if (!modalImage || !modalImage.src) {
+        showToast("No image selected to rate.");
+        return;
+    }
+
+    try {
+        const paintingId = modalImage.dataset.id;
+        console.log(`RATING: ${paintingId} -> ${rating}`);
+        logInteraction(paintingId, "rating", rating);
+        showToast(`Rated ${rating} stars`);
+
+    } catch (err) {
+        console.error("Rating error:", err);
+    }
+}
+
+async function submitReview() {
+     // Get the image currently displayed in the modal
+    const modalImage = document.getElementById("modalImage");
+    if (!modalImage || !modalImage.src) {
+        showToast("No image selected to submit areview.");
+        return;
+    }
+
+    try {
+        const paintingId = modalImage.dataset.id;
+        const reviewInput = document.getElementById("review");
+        const reviewText = reviewInput.value;
+        console.log(`REVIEW: ${paintingId} - ${reviewText}`);
+        logInteraction(paintingId, "review", reviewText);
+        showToast("Review submitted!");
+        reviewInput.value = "";
+
+    } catch (err) {
+        console.error("Review error:", err);
+    }
+}
+
+async function markNotInterested() {
+    // Get the image currently displayed in the modal
+    const modalImage = document.getElementById("modalImage");
+    if (!modalImage || !modalImage.src) {
+        showToast("No image selected to mark as not interested.");
+        return;
+    }
+
+    try {
+        const paintingId = modalImage.dataset.id;
+        console.log(`NOT INTERESTED: ${paintingId}`);
+        logInteraction(paintingId, "not_interested", 1);
+        showToast("Marked as not interested... fewer paintings like this will be shown.");
+        const btn = document.getElementById("notInterested");
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-sm fas fa-ban"></i> Marked';
+
+    } catch (err) {
+        console.error("Error marking not interested:", err);
+        showToast("Something went wrong.");
+    }
+}
+
 // Add to Favourites function
 async function addToFavourites() {
     // Get the image currently displayed in the modal
@@ -250,6 +380,7 @@ async function addToFavourites() {
             const favButton = document.getElementById("addToFav");
             favButton.innerHTML = '<i class="fa-solid fa-star"></i> Added';
             favButton.disabled = true;
+            logInteraction(paintingId, "favourite", 1);
         } else {
             console.error("Failed to add favourite:", response.statusText);
             showToast("Failed to add favourite.");

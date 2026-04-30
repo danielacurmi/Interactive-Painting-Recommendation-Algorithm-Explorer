@@ -349,22 +349,131 @@ def is_session_valid(session_id):
 
     return valid
 
-# Interaction Events Logging
-@app.route("/api/interaction_event_logging", methods=["GET"])
+EVENT_TYPES = {
+    "view_start",
+    "view_end",
+    "click",
+    "favourite",
+    "save_gallary",
+    "rating",
+    "not_interested",
+    "review",
+    "skip"
+}
+
+def log_event(session_id, user_id, painting_id, event_type, metadata=None):
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        INSERT INTO interaction_events (session_id, user_id, painting_id, event_type, timestamp)
+        VALUES (%s, %s, %s, %s, NOW())
+        RETURNING event_id;
+    """, (session_id, user_id, painting_id, event_type))
+
+    event_id = cur.fetchone()[0]
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    return event_id
+
+def ensure_summary(session_id, user_id, painting_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        INSERT INTO interaction_summary (session_id, user_id, painting_id)
+        VALUES (%s, %s, %s)
+        ON CONFLICT (session_id, user_id, painting_id)
+        DO NOTHING;
+    """, (session_id, user_id, painting_id))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def update_summary(session_id, user_id, painting_id, event_type, value=None):
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    if event_type == "view_end":
+        cur.execute("""
+            UPDATE interaction_summary
+            SET viewing_time_seconds = viewing_time_seconds + %s
+            WHERE session_id=%s AND user_id=%s AND painting_id=%s;
+        """, (value, session_id, user_id, painting_id))
+
+    elif event_type == "favourite":
+        cur.execute("""
+            UPDATE interaction_summary
+            SET favourite = 1
+            WHERE session_id=%s AND user_id=%s AND painting_id=%s;
+        """, (session_id, user_id, painting_id))
+
+    elif event_type == "click":
+        cur.execute("""
+            UPDATE interaction_summary
+            SET click = 1,
+                skip = 0
+            WHERE session_id=%s AND user_id=%s AND painting_id=%s;
+        """, (session_id, user_id, painting_id))
+
+    elif event_type == "save_gallary":
+        cur.execute("""
+            UPDATE interaction_summary
+            SET save_gallary = 1
+            WHERE session_id=%s AND user_id=%s AND painting_id=%s;
+        """, (session_id, user_id, painting_id))
+
+    elif event_type == "rating":
+        cur.execute("""
+            UPDATE interaction_summary
+            SET rating = %s
+            WHERE session_id=%s AND user_id=%s AND painting_id=%s;
+        """, (value, session_id, user_id, painting_id))
+
+    elif event_type == "not_interested":
+        cur.execute("""
+            UPDATE interaction_summary
+            SET not_interested = 1
+            WHERE session_id=%s AND user_id=%s AND painting_id=%s;
+        """, (session_id, user_id, painting_id))
+
+    elif event_type == "review":
+        cur.execute("""
+            UPDATE interaction_summary
+            SET review = %s
+            WHERE session_id=%s AND user_id=%s AND painting_id=%s;
+        """, (value, session_id, user_id, painting_id))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+# Interaction Events Logging and Summary
+@app.route("/api/interaction_event_logging", methods=["POST"])
 def interaction_event_logging():
-    a = "hello"
-    return a
+    data = request.json
 
-# Interaction Summary
-@app.route("/api/interaction_event_summary", methods=["GET"])
-def interaction_event_summary():
-    a = "hello"
-    return a
+    session_id = data.get("session_id")
+    user_id = data.get("user_id")
+    painting_id = data.get("painting_id")
+    event_type = data.get("event_type")
+    value = data.get("value")  # optional (rating, time, review)
 
-#interaction_events
-#interaction_summary 
+    if event_type not in EVENT_TYPES:
+        return jsonify({"error": "Invalid event type"}), 400
 
-#event_id, session_id, painting_id, event_type, event_value
+    event_id = log_event(session_id, user_id, painting_id, event_type)
+    ensure_summary(session_id, user_id, painting_id)
+    update_summary(session_id, user_id, painting_id, event_type, value)
+
+    return jsonify({
+        "status": "success",
+        "event_id": event_id
+    })
 
 # Get painting and artist metadata for each painting along with the image from the respective file path
 @app.route("/api/random-images/<int:n>")
@@ -521,41 +630,6 @@ def get_gallery():
         if f.lower().endswith(('.png', '.jpg', '.jpeg'))
     ]
     return jsonify(files)
-
-# @app.route("/api/image-info/<path:filename>")
-# def image_info(filename):
-#     image_path = os.path.join(DATASET_PATH, filename)
-
-#     # parse filename for genre, artist, painting, and year 
-#     parts = os.path.splitext(os.path.basename(filename))[0].split("_")
-#     artist_part = parts[0]
-#     painting_part = "_".join(parts[1:])
-#     match = re.search(r"\b\d{4}\b", painting_part)
-#     if match:
-#         year = match.group(0)
-#         painting_part = painting_part.replace(year, "").replace("-", " ")
-#     else:
-#         year = "Unknown"
-#         painting_part = painting_part.replace("-", " ")
-
-#     genre = os.path.basename(os.path.dirname(image_path)).replace("_", " ").title()
-
-#     artist = artist_part.replace("-", " ").title()
-#     painting_name = painting_part.replace("-", " ").title()
-
-#     image = cv2.imread(image_path)
-#     image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-
-#     palette, palette_type = extract_visual_features(image_rgb)
-
-#     return jsonify({
-#         "genre": genre,
-#         "artist": artist,
-#         "painting_name": painting_name,
-#         "year": year,
-#         "palette": palette.tolist(),
-#         "palette_type": palette_type
-#     })
 
 # folder for saving generated results
 paintings_dir = DATASET_PATH if DATASET_PATH.endswith("paintings") else os.path.join(DATASET_PATH, "paintings")
