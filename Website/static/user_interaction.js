@@ -6,14 +6,35 @@ async function initSession() {
     const user_id = localStorage.getItem("user_id");
     if (!user_id) return;
 
-    if (localStorage.getItem("session_id")) return;
+    let session_id = localStorage.getItem("session_id");
 
+    // Validate existing session
+    if (session_id) {
+        try {
+            const res = await fetch(window.appPath("/api/validate_session"), {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ session_id })
+            });
+
+            const data = await res.json();
+
+            if (data.valid) {
+                return; // still valid
+            } else {
+                localStorage.removeItem("session_id");
+            }
+        } catch (err) {
+            console.error("Validation error:", err);
+            localStorage.removeItem("session_id");
+        }
+    }
+
+    // Create new session
     try {
         const response = await fetch(window.appPath("/api/get_session"), {
             method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ user_id })
         });
 

@@ -288,18 +288,37 @@ def update_activity():
 
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+    
+@app.route("/api/validate_session", methods=["POST"])
+def validate_session():
+    data = request.get_json()
+    session_id = data.get("session_id")
+
+    if not session_id:
+        return jsonify({"valid": False})
+
+    valid = is_session_valid(session_id)
+
+    return jsonify({"valid": valid})
 
 def get_or_create_session(user_id):
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Check for active session within 24 hours
+    # Expire sessions older than 1 day 
+    cursor.execute("""
+        UPDATE sessions
+        SET session_end = CURRENT_TIMESTAMP
+        WHERE session_end IS NULL
+        AND session_start < CURRENT_TIMESTAMP - INTERVAL '1 day'
+    """)
+
+    # Check for active session
     cursor.execute("""
         SELECT session_id
         FROM sessions
         WHERE user_id = %s
         AND session_end IS NULL
-        AND session_start >= CURRENT_TIMESTAMP - INTERVAL '1 day'
         LIMIT 1
     """, (user_id,))
 
@@ -308,15 +327,6 @@ def get_or_create_session(user_id):
     if row:
         session_id = row[0]
     else:
-        # Expire any stale sessions
-        cursor.execute("""
-            UPDATE sessions
-            SET session_end = CURRENT_TIMESTAMP
-            WHERE user_id = %s
-            AND session_end IS NULL
-        """, (user_id,))
-
-        # Create new session
         cursor.execute("""
             INSERT INTO sessions (user_id, session_start, last_activity)
             VALUES (%s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
@@ -518,62 +528,61 @@ def cold_start_images():
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-        all_painting_ids = []
-        results = []
-        seen = set()
-
         # Get top-k per concept
-        results = []
+        concept_paintings = []
 
         for concept in concepts:
-            print("\n--- PROCESSING CONCEPT ---")
-            print("RAW CONCEPT:", concept)
-
             concept_type = concept.get("type")
             label = concept.get("label")
 
-            print("TYPE:", concept_type)
-            print("LABEL:", label)
-
-            _, top_ids, _ = get_thumbnail_for_concept(cursor, concept_type, label, top_k=10)
+            _, top_ids, _ = get_thumbnail_for_concept(cursor, concept_type, label, top_k=5)
 
             if not top_ids:
                 continue
-            
-            # Feth image paths
+
             cursor.execute("""
                 SELECT painting_id, image_path
                 FROM paintings_and_artists_metadata_bert
                 WHERE painting_id = ANY(%s)
-                ORDER BY array_position(%s, painting_id)
-            """, (top_ids, top_ids))
+            """, (top_ids,))
 
             rows = cursor.fetchall()
 
-            paintings = []
-            for row in rows:
+            # shuffle per concept
+            random.shuffle(rows)
+
+            concept_paintings.append(rows)
+
+        paintings = []
+        seen = set()
+        max_len = max(len(lst) for lst in concept_paintings)
+
+        for i in range(max_len):
+            for lst in concept_paintings:
+                if i >= len(lst):
+                    continue
+
+                row = lst[i]
+                pid = row["painting_id"]
+
+                if pid in seen:
+                    continue
+
+                seen.add(pid)
+
                 paintings.append({
-                    "painting_id": row["painting_id"],
+                    "painting_id": pid,
                     "image_url": build_painting_url(row["image_path"])
                 })
 
-            results.append({
-                "concept": {
-                    "type": concept_type,
-                    "label": label
-                },
-                "paintings": paintings
-            })
-
-        print(f"[DB QUERY] type={concept_type}, label='{label}'")
-        print(f"[DB RESULT COUNT] {len(results)}")
-
+        random.shuffle(paintings)
+        
         cursor.close()
         conn.close()
 
         return jsonify({
             "success": True,
-            "results": results
+            "paintings": paintings
         })
 
     except Exception as e:
@@ -1009,12 +1018,15 @@ def get_style_candidates(cursor, limit=20):
     return cursor.fetchall()
 
 PERIODS = [
-    ("Medieval", 1400, 1600),
+    ("Medieval", 500, 1400),
     ("Renaissance", 1400, 1600),
     ("Baroque", 1600, 1750),
-    ("Neoclassicism", 1750, 1850),
-    ("Impressionism", 1870, 1900),
-    ("Modern", 1900, 1960),
+    ("Neoclassicism", 1750, 1820),
+    ("Romanticism", 1800, 1850),
+    ("Realism", 1840, 1880),
+    ("Impressionism", 1870, 1890),
+    ("Post-Impressionism", 1886, 1905),
+    ("Modern", 1900, 1970),
     ("Contemporary", 1970, "Present")
 ]
 
@@ -1370,6 +1382,21 @@ def get_user_preferences():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
+def normalise_period_label(label):
+    PERIOD_MAP = {
+        "Medieval": {"start": 500, "end": 1400},
+        "Renaissance": {"start": 1400, "end": 1600},
+        "Baroque": {"start": 1600, "end": 1750},
+        "Neoclassicism": {"start": 1750, "end": 1820},
+        "Romanticism": {"start": 1800, "end": 1850},
+        "Realism": {"start": 1840, "end": 1880},
+        "Impressionism": {"start": 1870, "end": 1890},
+        "Post-Impressionism": {"start": 1886, "end": 1905},
+        "Modern": {"start": 1900, "end": 1970},
+        "Contemporary": {"start": 1970, "end": "Present"},
+    }
+    return PERIOD_MAP.get(label)
+
 # Thumbnails per concept in cold-start page
 def fetch_paintings_by_concept(cursor, concept_type, label):
     """
@@ -1397,6 +1424,15 @@ def fetch_paintings_by_concept(cursor, concept_type, label):
         """, (label,))
 
     elif concept_type == "period":
+        # Convert string to structured range
+        if isinstance(label, str):
+            label = normalise_period_label(label)
+
+        # Safeguard
+        if not label or not isinstance(label, dict):
+            print(f"[WARNING] Unknown period label: {label}")
+            return []
+
         start = label["start"]
         end = label["end"]
 
@@ -1410,7 +1446,8 @@ def fetch_paintings_by_concept(cursor, concept_type, label):
             cursor.execute("""
                 SELECT painting_id
                 FROM paintings_and_artists_metadata_bert
-                WHERE year_created BETWEEN %s AND %s
+                WHERE year_created IS NOT NULL
+                AND year_created BETWEEN %s AND %s
             """, (start, end))
 
     else:

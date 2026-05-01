@@ -40,13 +40,12 @@ function initRecommendations() {
 
                     const data = await response.json();
 
-                    if (data.success && data.results) {
-                        images = data.results.flatMap(r => r.paintings);
+                    if (data.success && data.paintings) {
+                        images = data.paintings;
+                        isColdStartPhase = false; // switch to random after first batch
                     }
-
-                    isColdStartPhase = false; // switch to random after first batch
                 } 
-                // SUBSEQUENT LOADS → RANDOM
+                // Random
                 else {
                     console.log("Fetching random images...");
 
@@ -208,16 +207,18 @@ function initRecommendations() {
         window.addEventListener('scroll', handleScroll);
 
         // Close modal
-        closeModal.addEventListener("click", () => {
-            const paintingId = parseInt(modalImage.dataset.id);
-            endViewing(paintingId);
-            modalOverlay.style.display = "none";
-        });
+        // Close button
+        closeModal.addEventListener("click", closeModalHandler);
+
+        // Click outside modal
         modalOverlay.addEventListener("click", (e) => {
             if (e.target === modalOverlay) {
-                const paintingId = parseInt(modalImage.dataset.id);
-                endViewing(paintingId); 
-                modalOverlay.style.display = "none";
+                closeModalHandler();
+            }
+        });
+        document.addEventListener("keydown", (e) => {
+            if (e.key === "Escape" && modalOverlay.style.display === "flex") {
+                closeModalHandler();
             }
         });
     }
@@ -490,6 +491,16 @@ async function loadUserPreferences() {
     } catch (err) {
         console.error("Failed to load user preferences:", err);
     }
+}
+
+function closeModalHandler() {
+    const paintingId = parseInt(modalImage.dataset.id);
+
+    if (!isNaN(paintingId)) {
+        endViewing(paintingId);
+    }
+
+    modalOverlay.style.display = "none";
 }
 
 // TRIPLE DOT drop down menu for explainability 
