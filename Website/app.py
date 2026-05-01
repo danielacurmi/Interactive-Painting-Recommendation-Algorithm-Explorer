@@ -576,7 +576,6 @@ def cold_start_images():
                 })
 
         random.shuffle(paintings)
-        
         cursor.close()
         conn.close()
 
@@ -755,7 +754,7 @@ def style_transfer_api():
         content_img_path=content_file,
         style_img_path=style_file,
         output_path=output_path,
-        num_steps=300,
+        num_steps=3,
         show_progress=True
     )
 

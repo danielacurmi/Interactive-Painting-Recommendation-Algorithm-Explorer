@@ -423,6 +423,10 @@ button.layered.active::after {
   z-index: 1000;
 }
 
+body.modal-open {
+    overflow: hidden;
+}
+
 /* Modal box */
 .modal {
   background: white;

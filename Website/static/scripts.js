@@ -124,6 +124,7 @@ function initRecommendations() {
 
                 // Show modal with the new image
                 modalOverlay.style.display = "flex";
+                document.body.classList.add("modal-open");
                 console.log(`CLICK on painting ${paintingId}`);
                 logInteraction(paintingId, "click", true);
                 startViewing(paintingId)
@@ -501,6 +502,7 @@ function closeModalHandler() {
     }
 
     modalOverlay.style.display = "none";
+    document.body.classList.remove("modal-open");
 }
 
 // TRIPLE DOT drop down menu for explainability 
