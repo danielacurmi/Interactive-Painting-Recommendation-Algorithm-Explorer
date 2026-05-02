@@ -2,43 +2,57 @@ document.addEventListener("DOMContentLoaded", async () => {
     const favContainer = document.getElementById("favourites-container");
     if (!favContainer) return; 
 
-  const BASE_PATH = window.ARTRECSYS_BASE_PATH || "";
-  const appPath = (path) => `${BASE_PATH}${path}`;
+    const BASE_PATH = window.ARTRECSYS_BASE_PATH || "";
+    const appPath = (path) => `${BASE_PATH}${path}`;
 
     try {
-    const response = await fetch(appPath("/api/favourites"));
-        const favourites = await response.json();
+        const userId = localStorage.getItem("user_id");
 
-        favourites.forEach(image => {
+        const response = await fetch(
+            appPath(`/api/favourites?user_id=${userId}`)
+        );
+
+        const data = await response.json();
+        const favourites = data.favourites;
+
+        favourites.forEach(item => {
             const favCard = document.createElement("div");
             favCard.classList.add("favourite-card");
 
             const img = document.createElement("img");
-            img.src = image;
+            img.src = appPath(`/${item.image_path.replace(/^\/+/, "")}`);
             img.alt = "Favourite Painting";
 
             favCard.appendChild(img);
             favContainer.appendChild(favCard);
         });
+
     } catch (err) {
         console.error("Error loading favourites:", err);
     }
 });
-
 
 async function loadFavouritesBackground() {
   const BASE_PATH = window.ARTRECSYS_BASE_PATH || "";
   const appPath = (path) => `${BASE_PATH}${path}`;
 
   try {
-    const response = await fetch(appPath('/api/favourites'));
+    const userId = localStorage.getItem("user_id");
+
+    const response = await fetch(
+      appPath(`/api/favourites?user_id=${userId}`)
+    );
+
     const data = await response.json();
 
-    // `data` is already an array
-    const favourites = data.slice(-4).reverse();
+    // FIX: access the array properly
+    const favourites = data.favourites || [];
 
-    const backgroundImages = favourites
-      .map(url => `url("${url}")`)
+    // Get last 4 (most recent)
+    const lastFour = favourites.slice(-4).reverse();
+
+    const backgroundImages = lastFour
+      .map(item => `url("${appPath(`/${item.image_path.replace(/^\/+/, "")}`)}")`)
       .join(', ');
 
     const favBoard = document.querySelector('.favourites-board');
@@ -48,6 +62,7 @@ async function loadFavouritesBackground() {
       favBoard.style.backgroundSize = '50% 50%';
       favBoard.style.backgroundRepeat = 'no-repeat';
     }
+
   } catch (err) {
     console.error('Error loading favourites:', err);
   }

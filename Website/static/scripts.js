@@ -137,34 +137,41 @@ function initRecommendations() {
                     modalImage.src = window.appPath(`/${String(data.image_path).replace(/^\/+/, "")}`);
 
                     const favButton = document.getElementById("addToFav");
+                    const notIntButton = document.getElementById("notInterested");
 
-                    // Reset the favourite button
+                    // Reset the favourite and not interested button
                     favButton.innerHTML = '<i class="fa-regular fa-star"></i> Add to Favourites';
                     favButton.disabled = false;
+
+                    notIntButton.innerHTML = '<i class="fa-sm fas fa-ban"></i> Not Interested';
+                    notIntButton.disabled = false;
 
                     document.querySelectorAll('input[name="rate"]').forEach(radio => {
                         radio.checked = false;
                     });
 
-                    title.textContent = data.title;
+                    setField(title, data.title);
+                    setField(artist, data.artist?.name_surname);
 
-                    artist.textContent = data.artist.name_surname;
+                    setField(
+                        artistBirth,
+                        (data.artist?.birth_year || data.artist?.death_year || data.artist?.nationality)
+                            ? `${data.artist?.birth_year ?? ""} – ${data.artist?.death_year ?? ""}, ${data.artist?.nationality ?? ""}`
+                            : null
+                    );
 
-                    artistBirth.textContent =
-                        `${data.artist.birth_year} – ${data.artist.death_year}, ${data.artist.nationality}`;
+                    setField(fields, data.artist?.fields, "Fields: ");
+                    setField(artMovements, data.artist?.art_movements, "Art Movements: ");
+                    setField(bio, data.artist?.bio);
 
-                    fields.textContent = `Fields: ${data.artist.fields}`;
-                    artMovements.textContent = `Art Movements: ${data.artist.art_movements}`;
-                    bio.textContent = data.artist.bio;
+                    setField(artStyle, data.art_style, "Art Style: ");
+                    setField(medium, data.media, "Medium: ");
 
-                    artStyle.textContent = `Art Style: ${data.art_style}`;
-                    medium.textContent = `Medium: ${data.media}`;
+                    setField(year, data.year_created, "Year: ");
+                    setField(genre, data.genre, "Genre: ");
 
-                    year.textContent = `Year: ${data.year_created}`;
-                    genre.textContent = `Genre: ${data.genre}`;
-
-                    paletteType.textContent = `Palette Type: ${data.palette_type}`;
-                    descriptionTags.textContent = `Description Tags: ${data.description_tags}`;
+                    setField(paletteType, data.palette_type, "Palette Type: ");
+                    setField(descriptionTags, data.description_tags, "Description Tags: ");
 
                     data.palette.forEach(color => {
                         const [r, g, b] = color;
@@ -320,7 +327,7 @@ function startViewing(painting_id) {
     if (activeViews[painting_id]) return;
     activeViews[painting_id] = Date.now();
     console.log(`View START: ${painting_id}`);
-    logInteraction(painting_id, "view_start");
+    logInteraction(painting_id, "view_start", );
 }
 
 function endViewing(painting_id) {
@@ -503,6 +510,34 @@ function closeModalHandler() {
 
     modalOverlay.style.display = "none";
     document.body.classList.remove("modal-open");
+}
+
+function setField(element, value, prefix = "") {
+    if (value === null || value === undefined || value === "" || value === "null") {
+        element.style.display = "none";
+    } else {
+        element.style.display = "block";
+        element.textContent = prefix ? `${prefix}${value}` : value;
+    }
+}
+
+const scrollBtn = document.getElementById("scrollTopBtn");
+
+// Show button when scrolling down
+window.addEventListener("scroll", () => {
+    if (window.scrollY > 200) {
+        scrollBtn.style.display = "block";
+    } else {
+        scrollBtn.style.display = "none";
+    }
+});
+
+// Scroll to top
+function scrollToTop() {
+    window.scrollTo({
+        top: 0,
+        behavior: "smooth"
+    });
 }
 
 // TRIPLE DOT drop down menu for explainability 

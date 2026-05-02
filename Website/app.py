@@ -52,10 +52,6 @@ def resolve_painting_path(image_path):
         normalized_path = normalized_path[len("paintings/"):]
     return os.path.join(paintings_dir, normalized_path)
 
-# Move to Database
-FAVOURITES_FILE = "favourites.json"
-GENERATED_FILE = "generated_art.json"
-
 all_images = [] # Collect all images
 
 for root, dirs, files in os.walk(DATASET_PATH):
@@ -670,11 +666,6 @@ def get_painting(painting_id):
     }
 
     return jsonify(response)
-    
-# Make sure the file exists
-if not os.path.exists(FAVOURITES_FILE):
-    with open(FAVOURITES_FILE, "w") as f:
-        json.dump([], f)
 
 @app.route('/api/add-favourite', methods=['POST'])
 def add_favourite():
@@ -705,12 +696,39 @@ def add_favourite():
 
 @app.route("/api/favourites", methods=["GET"])
 def get_favourites():
+    user_id = request.args.get("user_id")
+
+    if not user_id:
+        return jsonify({"error": "Missing user_id"}), 400
+
     try:
-        with open(FAVOURITES_FILE, "r") as f:
-            favourites = json.load(f)
-        return jsonify(favourites)
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        cur.execute("""
+            SELECT p.painting_id, p.image_path
+            FROM favourites f
+            JOIN paintings p ON f.painting_id = p.painting_id
+            WHERE f.user_id = %s
+        """, (user_id,))
+
+        rows = cur.fetchall()
+
+        favourites = [
+            {
+                "painting_id": row[0],
+                "image_path": row[1]
+            }
+            for row in rows
+        ]
+
+        cur.close()
+        conn.close()
+
+        return jsonify({"favourites": favourites})
+
     except Exception as e:
-        print("Error reading favourites:", e)
+        print("Error fetching favourites:", e)
         return jsonify({"error": str(e)}), 500
     
 @app.route('/api/gallary')
