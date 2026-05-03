@@ -148,6 +148,7 @@ function initRecommendations() {
 
                     document.querySelectorAll('input[name="rate"]').forEach(radio => {
                         radio.checked = false;
+                        radio.disabled = false;
                     });
 
                     setField(title, data.title);
@@ -327,41 +328,41 @@ function startViewing(painting_id) {
     if (activeViews[painting_id]) return;
     activeViews[painting_id] = Date.now();
     console.log(`View START: ${painting_id}`);
-    logInteraction(painting_id, "view_start", );
+    logInteraction(painting_id, "view_start");
 }
 
 function endViewing(painting_id) {
     if (!activeViews[painting_id]) return;
-    const duration = (Date.now() - activeViews[painting_id]) / 1000;
-    console.log(`View END: ${painting_id}, duration: ${duration}s`);
-    logInteraction(painting_id, "view_end", duration);
+    console.log(`View END: ${painting_id}`);
+    logInteraction(painting_id, "view_end");
     delete activeViews[painting_id];
 }
 
 document.querySelectorAll('input[name="rate"]').forEach(radio => {
     radio.addEventListener("change", function () {
         const rating = parseInt(this.value);
+        // Disable all rating inputs
+        document.querySelectorAll('input[name="rate"]').forEach(r => {
+            r.disabled = true;
+        });
         ratePainting(rating);
     });
 });
 
 async function ratePainting(rating) {
     const modalImage = document.getElementById("modalImage");
-
     if (!modalImage || !modalImage.dataset.id) {
         showToast("No image selected to rate.");
         return;
     }
 
     const paintingId = parseInt(modalImage.dataset.id);
-
     if (!rating || rating < 1 || rating > 5) {
         console.warn("Invalid rating:", rating);
         return;
     }
 
     console.log(`RATING: ${paintingId} -> ${rating}`);
-
     logInteraction(paintingId, "rating", rating);
     showToast(`Rated ${rating} stars!`);
 }

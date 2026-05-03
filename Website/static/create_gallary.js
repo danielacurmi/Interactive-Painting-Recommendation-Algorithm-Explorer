@@ -42,13 +42,10 @@ async function loadFavouritesBackground() {
     const response = await fetch(
       appPath(`/api/favourites?user_id=${userId}`)
     );
-
-    const data = await response.json();
-
-    // FIX: access the array properly
-    const favourites = data.favourites || [];
-
+    
     // Get last 4 (most recent)
+    const data = await response.json();
+    const favourites = data.favourites || [];
     const lastFour = favourites.slice(-4).reverse();
 
     const backgroundImages = lastFour

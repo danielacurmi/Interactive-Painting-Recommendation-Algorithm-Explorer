@@ -2,11 +2,11 @@
 from flask import Flask, render_template, jsonify, send_from_directory, request, send_file
 import os, random, cv2, re, pywt, json
 import numpy as np
-import matplotlib.pyplot as plt
 from sklearn.cluster import KMeans
 from skimage.feature import local_binary_pattern
 from flask_cors import CORS
 import torch
+import torch.nn as nn
 import torch.optim as optim
 from torchvision import transforms, models
 from PIL import Image
@@ -15,15 +15,18 @@ import psycopg2
 import psycopg2.extras
 from collections import defaultdict 
 from torchvision.models import VGG19_Weights
-import imageio
 import joblib
 import traceback
-
-#from Image_Feature_extraction.ipynb import run_style_transfer
+import h5py
+from transformers import CLIPProcessor, CLIPModel
+from sklearn.decomposition import PCA
+from pytorch_grad_cam import GradCAM
+from pytorch_grad_cam.utils.image import show_cam_on_image
+import wordninja
+from sentence_transformers import SentenceTransformer
 
 app = Flask(__name__)
 BASE_PATH = os.environ.get("ARTRECSYS_BASE_PATH", "/artrecsys").rstrip("/")
-
 
 class PrefixMiddleware:
     def __init__(self, app, prefix):
@@ -407,10 +410,22 @@ def update_summary(session_id, user_id, painting_id, event_type, value=None):
 
     if event_type == "view_end":
         cur.execute("""
+            WITH last_start AS (
+                SELECT timestamp
+                FROM interaction_events
+                WHERE session_id = %s
+                AND user_id = %s
+                AND painting_id = %s
+                AND event_type = 'view_start'
+                ORDER BY timestamp DESC
+                LIMIT 1
+            )
             UPDATE interaction_summary
-            SET viewing_time_seconds = COALESCE(viewing_time_seconds, 0) + %s
+            SET viewing_time_seconds = COALESCE(viewing_time_seconds, 0) +
+                EXTRACT(EPOCH FROM (NOW() - (SELECT timestamp FROM last_start)))
             WHERE session_id=%s AND user_id=%s AND painting_id=%s;
-        """, (value, session_id, user_id, painting_id))
+        """, (session_id, user_id, painting_id,
+            session_id, user_id, painting_id))
 
     elif event_type == "favourite":
         cur.execute("""
@@ -1566,6 +1581,606 @@ def generate_concept_thumbnail(concept_type, label):
     finally:
         cursor.close()
         conn.close()
+
+# User-Profile Creation
+# Create a weighted user profile vector based on interactions or cold start if new user
+def l2_normalise(feature_vector):
+    feature_vector = np.array(feature_vector, dtype=np.float64)
+    norm = np.linalg.norm(feature_vector)
+
+    # prevent validation errors
+    if norm == 0 or np.isnan(norm) or np.isinf(norm):
+        return np.zeros_like(feature_vector)
+    
+    return feature_vector/norm
+
+def compute_interaction_weight(interaction):
+    """
+    Compute weight from a single interaction record
+    interaction: dict containing both implicit and/or explicit user feedback
+    """
+    weight = 0.0
+
+    # Explicit feedback 
+    if interaction.get("rating") is not None:
+        weight += 2.0 * (interaction["rating"] / 5.0)
+
+    if interaction.get("review") is not None:
+        weight += 1.5  # assume positive sentiment for now, for future work include sentiment analysis
+
+    if interaction.get("favourite"):
+        weight += 3.0
+
+    if interaction.get("not_interested"):
+        weight -= 3.0
+
+    if interaction.get("save_to_gallery"):
+        weight += 2.0
+        
+    # TO-DO: user can rank which are most imp to see how results change
+    # Have a normalised wieght value 
+
+    # Implicit Feedback
+    if interaction.get("viewing_time") is not None:
+        # normalize time (e.g. cap at 60 sec)
+        weight += min(interaction["viewing_time"] / 60.0, 1.0)
+
+    if interaction.get("click"):
+        weight += 0.5
+
+    # click stream frequency boost
+    if interaction.get("click_stream_count") is not None:
+        weight += 0.2 * interaction["click_stream_count"]
+
+    return weight
+
+def create_user_profile(interactions, features_file_path, cold_start_preferences=None):
+    """
+    interactions: list of dicts, each containing:
+        {
+            "painting_id": int,
+            "click": bool,
+            "viewing_time": int,
+            "rating": int,
+            "review": str,
+            "favourite": bool,
+            "not_interested": bool,
+            "save_to_gallery": bool,
+            "click_stream_count": int
+        }
+
+    cold_start_prefs: dict 
+        {
+            "preferred_painting_ids": [ids derived from selected artists/styles/etc.]
+        }
+    """
+
+    weighted_sum = None
+    total_weight = 0.0
+
+    # Load feature embeddings for paintings the user interacted with
+    with h5py.File(features_file_path, "r") as f:
+        features = f["features"]  # shape: (N, d)
+
+        # Process user interaction
+        for interaction in interactions:
+            pid = interaction["painting_id"]
+            vector = features[pid]
+
+            weight = compute_interaction_weight(interaction)
+
+            if weight == 0:
+                continue
+
+            if weighted_sum is None:
+                weighted_sum = np.zeros_like(vector)
+
+            weighted_sum += weight * vector
+            total_weight += abs(weight)
+
+        # Cold start mitigation  
+        if cold_start_preferences and "preferred_painting_ids" in cold_start_preferences:
+            cold_vectors = []
+
+            for pid in cold_start_preferences["preferred_painting_ids"]:
+                cold_vectors.append(features[pid])
+
+            if len(cold_vectors) > 0:
+                cold_vector = np.mean(cold_vectors, axis=0)
+
+                # give moderate importance
+                cold_weight = 2.0
+
+                if weighted_sum is None:
+                    weighted_sum = np.zeros_like(cold_vector)
+
+                weighted_sum += cold_weight * cold_vector
+                total_weight += cold_weight
+
+    # Final normalisation
+    if weighted_sum is None:
+        raise ValueError("No valid interactions or cold-start data available")
+
+    user_profile = weighted_sum / total_weight
+    user_profile = l2_normalise(user_profile)
+
+    return user_profile
+
+# ResNet50/VGG-19
+# Preprocess images the same way as they were trained on ImageNet
+transform = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+    transforms.Normalize(
+        mean=[0.485, 0.456, 0.406],
+        std =[0.229, 0.224, 0.225]
+    )
+])
+
+def preprocess_image(image_path):
+    try:
+        img = Image.open(image_path).convert("RGB")
+        img = transform(img)
+        return img
+    except:
+        return None
+    
+model_resnet = models.resnet50(pretrained=True)
+
+# Remove final classification layer (fc)
+model_resnet = torch.nn.Sequential(*list(model_resnet.children())[:-1])
+model_resnet.to(device)
+model_resnet.eval()  
+
+class VGG19FeatureExtractor(nn.Module):
+    def __init__(self):
+        super().__init__()
+        vgg = models.vgg19(weights=models.VGG19_Weights.IMAGENET1K_V1)
+        self.features = vgg.features
+
+        # Freeze 
+        for param in self.features.parameters():
+            param.requires_grad = False
+
+        # Layers to extract from
+        self.selected_layers = [17, 26, 35]
+        self.pool = nn.AdaptiveAvgPool2d((1, 1))
+
+    def forward(self, x):
+        outputs = []
+
+        for i, layer in enumerate(self.features):
+            x = layer(x)
+            if i in self.selected_layers:
+                pooled = self.pool(x)
+                pooled = pooled.view(pooled.size(0), -1)  # flatten
+                outputs.append(pooled)
+
+        # Concatenate multi-level features
+        return torch.cat(outputs, dim=1)
+
+model_vgg = VGG19FeatureExtractor().to(device)
+model_vgg.eval()
+
+def extract_resnet_features(model, img_tensor):
+    img_tensor = img_tensor.unsqueeze(0).to(device)
+
+    with torch.no_grad():
+        features = model(img_tensor)
+
+    features = features.squeeze(-1).squeeze(-1)  # (1, 2048)
+    
+    return features.cpu().numpy().flatten()
+
+def extract_vgg_19_features(model, img_tensor):
+    img_tensor = img_tensor.unsqueeze(0).to(device)
+
+    with torch.no_grad():
+        features = model(img_tensor) # (1, 1280)
+
+    return features.cpu().numpy().flatten() 
+
+# Load embeddings
+data = joblib.load('resnet50_embeddings.pkl')
+embeddings_resnet = data['embeddings']
+image_ids_resnet = data['image_ids']
+
+data = joblib.load('VGG19_embeddings.pkl')
+embeddings_vgg = data['embeddings']
+image_ids_vgg = data['image_ids']
+
+embeddings_resnet_norm = embeddings_resnet / np.linalg.norm(embeddings_resnet, axis=1, keepdims=True)
+embeddings_vgg_norm = embeddings_vgg / np.linalg.norm(embeddings_vgg, axis=1, keepdims=True)
+
+pcaRESNET = PCA(n_components=512) # or 128, 512 depending on tradeoff
+pcaVGG = PCA(n_components=256)  
+pca_resnet = pcaRESNET.fit_transform(embeddings_resnet_norm)
+pca_vgg = pcaVGG.fit_transform(embeddings_vgg_norm)
+
+resnet_norm = pca_resnet / np.linalg.norm(pca_resnet, axis=1, keepdims=True)
+vgg_norm = pca_vgg / np.linalg.norm(pca_vgg, axis=1, keepdims=True)
+
+def retrieve_top_k(query_path, model_name, model, embeddings, transform, k=10):
+    # Load and preprocess query 
+    img = preprocess_image(query_path)
+
+    # Extract features, L2 Norm, Apply PCA, L2 Norm again, Cosine similarity
+    if(model_name == 'model_vgg'):
+        query_embeddings = extract_vgg_19_features(model, img)
+        query_embeddings = query_embeddings / np.linalg.norm(query_embeddings)
+        query_embeddings = pcaVGG.transform(query_embeddings.reshape(1, -1)).flatten()
+        query_embeddings = query_embeddings / np.linalg.norm(query_embeddings)
+        scores = embeddings @ query_embeddings
+    elif(model_name == 'model_resnet'):
+        query_embeddings = extract_resnet_features(model, img)
+        query_embeddings = query_embeddings / np.linalg.norm(query_embeddings)
+        query_embeddings = pcaRESNET.transform(query_embeddings.reshape(1, -1)).flatten()
+        query_embeddings = query_embeddings / np.linalg.norm(query_embeddings)
+        scores = embeddings @ query_embeddings
+    
+    # Late fusion 
+    #scores = alpha * sim_resnet + (1 - alpha) * sim_vgg
+
+    # Top-k retreival 
+    top_k_idx = np.argsort(scores)[::-1][:k]
+
+    return top_k_idx, scores[top_k_idx]
+
+# SBERT 
+# Title preprocessing i.e. NULL/missing handling and text normalisation 
+ROMAN_NUMERAL_PATTERN = re.compile(r'\b(i{1,3}|iv|v|vi{0,3}|ix|x)\b', re.IGNORECASE)
+
+def normalize_roman_numerals(text: str) -> str:
+    return ROMAN_NUMERAL_PATTERN.sub(lambda m: m.group(0).upper(), text)
+
+def process_title(title: str) -> str:
+    # Handle NULL/missing values 
+    if title is None or title.strip() == "":
+        return "unknown title"
+
+    # Normalise whitespace
+    title = title.strip() 
+    title = re.sub(r'\s+', ' ', title)
+
+    # Fix broken apostrophes e.g. "Martin S" → "Martin's" and normalise roman numerals
+    title = re.sub(r"\b([A-Za-z]+)\s+S\b", r"\1's", title)
+    title = normalize_roman_numerals(title)
+
+    # Remove trailing index numbers only when safe
+    if re.search(r'(untitled|drawing|study|composition|abstraction)', title, re.IGNORECASE):
+        title = re.sub(r'\s*\(?\d+\)?$', '', title)
+
+    title = re.sub(r'\s+', ' ', title).strip()
+
+    return title
+
+# Used to avoid cutting mid-word
+def safe_cut(text, length):
+    cut = text[:length]
+    return cut[:cut.rfind(" ")] if " " in cut else cut
+
+# Bio preprocessing, including character cutoff since bio fields contain the most 
+# characters and heavily bias the embedding space if left untrimmed
+def process_bio(bio: str, max_chars=2000) -> str:
+    if bio is None or bio.strip() == "":
+        return "no biography available"
+    
+    # Normalise whitespace, including newlines and tabs
+    bio = bio.strip()
+    bio = re.sub(r'\s+', ' ', bio)
+
+    # Truncate so that bio is token-safe for SBERT 
+    if len(bio) > max_chars:
+        head_len = int(max_chars * 0.6)
+        tail_len = max_chars - head_len
+
+        head = safe_cut(bio, head_len)
+        tail = safe_cut(bio[::-1], tail_len)[::-1]
+
+        bio = f"{head} ... {tail}"
+
+    return bio
+
+# This method can be used for all categorical fields, to handle NULL/missing values, convert all fields to lowercase apart 
+# from artist and remove excess whitespace 
+def process_categorical_field(field_value: str, field_name: str = None) -> str:
+    # Handle NULL/missing values 
+    if field_value is None or field_value.strip() == "":
+        return f"unknown {field_name}"
+
+    field_value = field_value.strip()
+
+    # Normalise whitespace and convert all categoricals to lowercase except artist since it harms entity recognition
+    field_value = re.sub(r'\s+', ' ', field_value)
+    if field_name != "artist":
+        field_value = field_value.lower()
+
+    return field_value
+
+# This method can be used for all multi-value fields, it handles nulls/missing values, 
+# converts all comma seperated items to lower case, and applies the respective preprocessing for description_tags, 
+# joining all value segments using |
+def process_multi_value_field(feild_value: str, field_name: str = None) -> str:
+    # Handle NULL/missing values
+    if feild_value is None or feild_value.strip() == "":
+        return f"unknown {field_name}" 
+
+    # Split on comma 
+    items = feild_value.split(",")
+    cleaned = []
+    for item in items:
+        item = item.strip().lower()
+        if item == "":
+            continue
+        
+        # Replace hyphens with space when in-between words only and normalise internal whitespace
+        if field_name == "description tags":
+            item = re.sub(r'(?<=\w)-(?=\w)', ' ', item)
+
+            # Apply segmentation only if; no spaces already, long enough, purely alphabetic
+            if " " not in item and len(item) > 10 and item.isalpha():
+                split_words = wordninja.split(item)
+
+                # Safety checks to avoid bad splits (e.g. single char fragments)
+                if (len(split_words) > 1 and all(len(w) > 2 for w in split_words) and len(" ".join(split_words)) >= len(item) * 0.8):
+                    item = " ".join(split_words) 
+
+        item = re.sub(r'\s+', ' ', item)
+        cleaned.append(item)
+
+    if not cleaned:
+        return f"unknown {field_name}" 
+
+    # Deduplicate while preserving order
+    unique_items = list(dict.fromkeys(cleaned))
+
+    return " | ".join(unique_items)
+
+# Instead of using years, encode them as semantic 
+def process_year(year_created):
+    # NULL/missing 
+    if year_created is None or str(year_created).strip() == "":
+        return "unknown period"
+
+    try:
+        year = int(year_created)
+    except (ValueError, TypeError):
+        return "unknown period"
+
+    # Period mapping 
+    if year < 1400:
+        return "medieval period 14th century"
+    elif year < 1600:
+        return "renaissance period 16th century"
+    elif year < 1700:
+        return "baroque period 17th century"
+    elif year < 1800:
+        return "rococo enlightenment period 18th century"
+    elif year <= 1850:
+        return "early modern period 18th century"
+    elif year <= 1900:
+        return "late 19th century impressionism era"
+    elif year <= 1945:
+        return "early 20th century modernism"
+    elif year <= 1970:
+        return "mid 20th century post war modern"
+    elif year <= 2000:
+        return "late 20th century contemporary"
+    else:
+        return "contemporary period 20th century" 
+
+def format_text_fields(title, year_created, genre, art_style, media, description_tags, artist, nationality, fields, art_movements, bio):
+    title_processed = process_title(title)
+    year_processed = process_year(year_created)
+    genre_processed = process_categorical_field(genre, "genre")
+    art_style_processed = process_categorical_field(art_style, "art style")
+    media_processed = process_multi_value_field(media, "media")
+    description_tags_processed = process_multi_value_field(description_tags, "description tags")
+    artist_processed = process_categorical_field(artist, "artist")
+    nationality_processed = process_categorical_field(nationality, "nationality")
+    fields_processed = process_multi_value_field(fields, "fields")
+    art_movements_processed = process_multi_value_field(art_movements, "art movements")
+    bio_processed = process_bio(bio)
+
+    # Structured reperesntation 
+    structured = {
+        "title": title_processed,
+        "year_period": year_processed,
+        "genre": genre_processed,
+        "art_style": art_style_processed,
+        "media": media_processed.split(" | "),
+        "description_tags": description_tags_processed.split(" | "),
+        "artist": artist_processed,
+        "nationality": nationality_processed,
+        "fields": fields_processed.split(" | "),
+        "art_movements": art_movements_processed.split(" | "),
+        "bio": bio_processed
+    }
+
+    return structured
+processed_data = joblib.load("processed_data.pkl")
+
+# Load SBERT model to be used for per-field embedding extraction 
+model = SentenceTransformer('all-mpnet-base-v2') # all-roberta-large-v1, paraphrase-multilingual-mpnet-base-v2
+def prepare_field_text(value):
+    if isinstance(value, list):
+        return " | ".join(value) if value else ""
+    text = str(value).strip()
+    return text
+
+embedding_matrices = joblib.load("SBERT_embedding_matrices.pkl")
+
+#query_clean = format_text_fields(query["title"], query["year_created"], query["genre"], query["art_style"], query["media"],
+                    #query["description_tags"], query["artist"], query["art_movements"], query["fields"], query["nationality"], 
+                    #query["bio"])
+
+def encode_query_sbert(query_structured, model):
+    query_embeddings = {}
+
+    for field, value in query_structured.items():
+        text = prepare_field_text(value)
+
+        if text == "":
+            continue
+
+        query_embeddings[field] = model.encode(text, normalize_embeddings=True)
+    return query_embeddings
+
+WEIGHTS = {
+    "title": 0.2,
+    "genre": 0.1,
+    "art_style": 0.1,
+    "description_tags": 0.1,
+    "media": 0.05,
+    "year_period": 0.05,
+    "artist": 0.05,
+    "nationality": 0.03,
+    "fields": 0.03,
+    "art_movements": 0.1,
+    "bio": 0.03   
+}
+
+def normalise_weights(weights):
+    total = sum(weights.values())
+    return {k: v / total for k, v in weights.items()}
+
+WEIGHTS = normalise_weights(WEIGHTS)
+
+def compute_similarity_per_field_sbert(query_embeddings, embedding_matrices):
+    similarities = {}
+
+    for field, matrix in embedding_matrices.items():
+        q = query_embeddings.get(field)
+
+        if q is None:
+            similarities[field] = np.zeros(matrix.shape[0])
+            continue
+
+        sim = matrix @ q   
+        similarities[field] = sim
+
+    return similarities
+
+def weighted_late_fusion(similarities, weights):
+    final_scores = np.zeros(len(next(iter(similarities.values()))))
+
+    for field, sim in similarities.items():
+        final_scores += weights.get(field, 0) * sim
+
+    return final_scores
+
+def get_top_k(final_scores, query_index, k=30):
+    final_scores = final_scores.copy()
+    final_scores[query_index] = -np.inf
+    top_indices = np.argpartition(final_scores, -k)[-k:]
+    top_indices = top_indices[np.argsort(final_scores[top_indices])[::-1]]
+    return top_indices, final_scores[top_indices]
+
+painting_id_to_index = {
+    pid: idx for idx, (_, pid) in enumerate(processed_data)
+}
+def recommend_sbert(query_structured, model, embedding_matrices, weights, painting_id_to_index, query_id, k=10):
+    query_embeddings = encode_query_sbert(query_structured, model)
+    similarities = compute_similarity_per_field_sbert(query_embeddings, embedding_matrices)
+    final_scores = weighted_late_fusion(similarities, weights)
+    query_index = painting_id_to_index[int(query_id)]
+    top_indices, scores = get_top_k(final_scores, query_index, k)
+    return top_indices, scores, similarities
+
+# CLIP
+# Load CLIP Model and Processor  
+model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32", use_safetensors=True).to(device)
+processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+
+image_tensors = joblib.load('image_tensors.pkl')
+text_tensors = joblib.load('text_tensors.pkl')
+
+image_matrix = np.array(image_tensors)  # (N, 512)
+text_matrix = np.array(text_tensors)    # (N, 512)
+
+image_matrix = image_matrix / np.linalg.norm(image_matrix, axis=1, keepdims=True)
+text_matrix = text_matrix / np.linalg.norm(text_matrix, axis=1, keepdims=True)
+
+def retrieve_by_text(query, top_k=10):
+    inputs = processor(text=query, return_tensors="pt", padding=True, truncation=True).to(device)
+
+    with torch.no_grad():
+        q_emb = model.get_text_features(**inputs)
+        q_emb = q_emb / q_emb.norm(dim=-1, keepdim=True)
+
+    q_emb = q_emb.cpu().numpy()
+
+    # cosine similarity
+    scores = image_matrix @ q_emb.T  
+    top_k_idx = np.argsort(scores[:, 0])[::-1][:top_k]
+
+    return top_k_idx, scores[top_k_idx]
+
+def retrieve_by_image(image, top_k=10):
+    inputs = processor(images=image, return_tensors="pt").to(device)
+
+    with torch.no_grad():
+        q_emb = model.get_image_features(**inputs)
+        q_emb = q_emb / q_emb.norm(dim=-1, keepdim=True)
+
+    q_emb = q_emb.cpu().numpy()
+
+    # cosine similarity
+    scores = image_matrix @ q_emb.T
+    top_k_idx = np.argsort(scores[:, 0])[::-1][:top_k]
+
+    return top_k_idx, scores[top_k_idx]
+
+def hybrid_retrieve(query, alpha=0.6, top_k=10):
+    inputs = processor(text=query, return_tensors="pt", padding=True, truncation=True).to(device)
+
+    with torch.no_grad():
+        text_emb = model.get_text_features(**inputs)
+        text_emb = text_emb / text_emb.norm(dim=-1, keepdim=True)
+
+    text_emb = text_emb.cpu().numpy()
+
+    # cosine similarity
+    text_scores = image_matrix @ text_emb.T
+    text_side_scores = text_matrix @ text_emb.T
+
+    final_scores = alpha * text_scores + (1 - alpha) * text_side_scores
+    top_k_idx = np.argsort(final_scores[:, 0])[::-1][:top_k]
+
+    return top_k_idx, final_scores[top_k_idx]
+
+def fetch_paintings(painting_ids):
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    # Preserve order 
+    cur.execute("""
+        SELECT 
+            painting_id,
+            title,
+            year_created,
+            artist,
+            genre, 
+            art_style,
+            media,
+            description_tags,
+            nationality,
+            fields, 
+            art_movements,
+            bio,
+            image_path
+        FROM paintings_and_artists_metadata_bert
+        WHERE painting_id = ANY(%s)
+        ORDER BY array_position(%s, painting_id);
+    """, (painting_ids, painting_ids))
+
+    rows = cur.fetchall()
+
+    cur.close()
+    conn.close()
+
+    return rows
+
 
 # TO-RUN: python app.py
 if __name__ == "__main__":
