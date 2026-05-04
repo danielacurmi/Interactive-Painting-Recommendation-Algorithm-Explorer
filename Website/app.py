@@ -1494,8 +1494,8 @@ def fetch_paintings_by_concept(cursor, concept_type, label):
 
     return painting_ids
 
-image_tensors = joblib.load('image_tensors.pkl')
-image_ids = joblib.load('ids.pkl')
+image_tensors = joblib.load('data/image_tensors.pkl')
+image_ids = joblib.load('data/ids.pkl')
 image_matrix = np.array(image_tensors)  # (N, 512)
 image_matrix = image_matrix / np.linalg.norm(image_matrix, axis=1, keepdims=True)
 
@@ -1781,11 +1781,11 @@ def extract_vgg_19_features(model, img_tensor):
     return features.cpu().numpy().flatten() 
 
 # Load embeddings
-data = joblib.load('resnet50_embeddings.pkl')
+data = joblib.load('data/resnet50_embeddings.pkl')
 embeddings_resnet = data['embeddings']
 image_ids_resnet = data['image_ids']
 
-data = joblib.load('VGG19_embeddings.pkl')
+data = joblib.load('data/VGG19_embeddings.pkl')
 embeddings_vgg = data['embeddings']
 image_ids_vgg = data['image_ids']
 
@@ -1998,7 +1998,7 @@ def format_text_fields(title, year_created, genre, art_style, media, description
     }
 
     return structured
-processed_data = joblib.load("processed_data.pkl")
+processed_data = joblib.load("data/processed_data.pkl")
 
 # Load SBERT model to be used for per-field embedding extraction 
 model = SentenceTransformer('all-mpnet-base-v2') # all-roberta-large-v1, paraphrase-multilingual-mpnet-base-v2
@@ -2008,7 +2008,7 @@ def prepare_field_text(value):
     text = str(value).strip()
     return text
 
-embedding_matrices = joblib.load("SBERT_embedding_matrices.pkl")
+embedding_matrices = joblib.load("data/SBERT_embedding_matrices.pkl")
 
 #query_clean = format_text_fields(query["title"], query["year_created"], query["genre"], query["art_style"], query["media"],
                     #query["description_tags"], query["artist"], query["art_movements"], query["fields"], query["nationality"], 
@@ -2092,8 +2092,8 @@ def recommend_sbert(query_structured, model, embedding_matrices, weights, painti
 model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32", use_safetensors=True).to(device)
 processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
 
-image_tensors = joblib.load('image_tensors.pkl')
-text_tensors = joblib.load('text_tensors.pkl')
+image_tensors = joblib.load('data/image_tensors.pkl')
+text_tensors = joblib.load('data/text_tensors.pkl')
 
 image_matrix = np.array(image_tensors)  # (N, 512)
 text_matrix = np.array(text_tensors)    # (N, 512)
