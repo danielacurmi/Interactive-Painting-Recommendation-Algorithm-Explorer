@@ -899,7 +899,7 @@ def style_transfer_api():
         content_img_path=content_file,
         style_img_path=style_file,
         output_path=output_path,
-        num_steps=3,
+        num_steps=300,
         show_progress=True
     )
 
@@ -1761,46 +1761,6 @@ def compute_interaction_weight(interaction):
 
     return weight
 
-def create_user_profile(interactions, image_matrix, id_to_idx):
-    """
-    interactions: list of dicts, each containing:
-        {
-            "painting_id": int,
-            "click": bool,
-            "viewing_time": int,
-            "skip": bool,
-            "rating": int,
-            "review": str,
-            "favourite": bool,
-            "not_interested": bool,
-            "save_to_gallery": bool
-        }
-    """
-    weighted_sum = np.zeros(image_matrix.shape[1])
-    total_weight = 0.0
-
-    for interaction in interactions:
-        pid = interaction["painting_id"]
-
-        if pid not in id_to_idx:
-            continue
-
-        idx = id_to_idx[pid]
-        vector = image_matrix[idx]
-
-        weight = interaction["weight"]
-
-        weighted_sum += weight * vector
-        total_weight += abs(weight)
-
-    if total_weight == 0:
-        raise ValueError("No valid signal")
-
-    user_profile = weighted_sum / total_weight
-    user_profile = user_profile / np.linalg.norm(user_profile)
-
-    return user_profile
-
 # ResNet50/VGG-19
 # Preprocess images the same way as they were trained on ImageNet
 transform = transforms.Compose([
@@ -1895,10 +1855,48 @@ pca_vgg = pcaVGG.fit_transform(embeddings_vgg_norm)
 resnet_norm = pca_resnet / np.linalg.norm(pca_resnet, axis=1, keepdims=True)
 vgg_norm = pca_vgg / np.linalg.norm(pca_vgg, axis=1, keepdims=True)
 
-def retrieve_top_k_from_user(user_profile, embeddings, k=10):
-    scores = embeddings @ user_profile
-    top_k_idx = np.argsort(scores)[::-1][:k]
-    return top_k_idx, scores[top_k_idx]
+def score_paintings_from_interactions(interactions, embeddings, id_to_idx):
+    """
+    Implements:
+    s(q) = Σ (w_i * sim(q, p_i)) / Σ w_i
+    """
+
+    N = embeddings.shape[0]
+    scores = np.zeros(N)
+
+    total_weight = 0.0
+
+    for interaction in interactions:
+        pid = interaction["painting_id"]
+        w = interaction["weight"]
+
+        # Skip weak signals 
+        if w < 1.0:
+            continue
+
+        if pid not in id_to_idx:
+            continue
+
+        idx = id_to_idx[pid]
+        vec = embeddings[idx]   # already normalised 
+
+        # cosine similarity with ALL paintings
+        sim = embeddings @ vec   # shape [N]
+
+        scores += w * sim
+        total_weight += abs(w)
+
+    if total_weight == 0:
+        return None
+
+    scores /= total_weight
+    # Normalize to [0,1]
+    min_s = scores.min()
+    max_s = scores.max()
+
+    if max_s > min_s:
+        scores = (scores - min_s) / (max_s - min_s)
+    return scores
 
 def get_seen_paintings(user_id):
     conn = get_db_connection()
@@ -1936,11 +1934,15 @@ def recommend_resnet():
     for i in interactions:
         i["weight"] = compute_interaction_weight(i)
 
-    user_profile = create_user_profile(interactions, embeddings_resnet, id_to_idx)
-    user_profile = pcaRESNET.transform(user_profile.reshape(1, -1)).flatten()
-    user_profile = user_profile / np.linalg.norm(user_profile)
+    scores = score_paintings_from_interactions(interactions, resnet_norm, id_to_idx)
 
-    top_k_idx, scores = retrieve_top_k_from_user(user_profile, resnet_norm, k)
+    if scores is None:
+        return jsonify({
+            "success": False,
+            "error": "No strong interaction signal"
+        }), 200
+
+    top_k_idx = np.argsort(scores)[::-1]
     print("painting IDs: ", top_k_idx)
     print("scores: ", scores)
 
@@ -1948,14 +1950,20 @@ def recommend_resnet():
     results = []
     db_rows = []
 
-    for rank, (idx, score) in enumerate(zip(top_k_idx, scores)):
+    rank = 0
+    for idx in top_k_idx:
         painting_id = int(image_ids[idx])
+        score = float(scores[idx])  
+
         if painting_id in seen:
+            continue
+
+        if score < 0.05:
             continue
 
         results.append({
             "painting_id": painting_id,
-            "score": float(score)
+            "score": score
         })
 
         db_rows.append((
@@ -1964,9 +1972,14 @@ def recommend_resnet():
             painting_id,
             request_id,
             rank,
-            float(score),
+            score,
             datetime.utcnow()
         ))
+
+        rank += 1
+
+        if rank >= k:
+            break
 
     painting_ids = [r["painting_id"] for r in results]
     db_paintings = fetch_paintings(painting_ids)
