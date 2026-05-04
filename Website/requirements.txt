@@ -12,3 +12,7 @@ Pillow
 psycopg2-binary
 joblib
 h5py
+transformers
+grad-cam
+wordninja
+sentence_transformers

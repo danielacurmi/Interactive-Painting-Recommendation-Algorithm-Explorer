@@ -2181,7 +2181,6 @@ def fetch_paintings(painting_ids):
 
     return rows
 
-
 # TO-RUN: python app.py
 if __name__ == "__main__":
     app.run(debug=True)
