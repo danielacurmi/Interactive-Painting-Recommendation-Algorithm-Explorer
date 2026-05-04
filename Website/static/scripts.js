@@ -9,6 +9,32 @@ document.addEventListener("DOMContentLoaded", async () => {
     await initRecommendations();
 });
 
+document.getElementById("searchBar").addEventListener("keydown", async function (event) {
+    if (event.key === "Enter") {
+        const query = event.target.value.trim();
+
+        if (!query) return;
+
+        const payload = {
+            user_id: localStorage.getItem("user_id"),
+            session_id: localStorage.getItem("session_id"),
+            query_text: query
+        };
+
+        try {
+            await fetch(window.appPath(`/api/log_search_query`), {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(payload)
+            });
+        } catch (err) {
+            console.error("Failed to log search query:", err);
+        }
+    }
+});
+
 function initRecommendations() {
     let fetching = false;
     const container = document.getElementById('container');
@@ -77,7 +103,7 @@ function initRecommendations() {
                         body: JSON.stringify({
                             user_id: parseInt(user_id),
                             session_id: parseInt(session_id),
-                            k: 10
+                            k: 20
                         })
                     });
 

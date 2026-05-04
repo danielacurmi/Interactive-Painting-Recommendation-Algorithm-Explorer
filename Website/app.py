@@ -14,7 +14,7 @@ from datetime import datetime
 import psycopg2
 import psycopg2.extras
 from psycopg2.extras import execute_values
-from collections import defaultdict 
+from collections import defaultdict
 from torchvision.models import VGG19_Weights
 import joblib
 import traceback
@@ -124,7 +124,7 @@ print(get_db_connection())
 #     return ip
 
 # This function couldn't be used becuase a public IP is not a reliable device identifier
-# due to NAT (multiple users behind one IP), mobile carrier gateways, VPNs, etc. 
+# due to NAT (multiple users behind one IP), mobile carrier gateways, VPNs, etc.
 # Using it as a proxy for “user/device” will systematically collapse distinct users into the same identity.
 
 def get_client_id():
@@ -171,13 +171,13 @@ def check_user():
     except Exception as e:
         print("ERROR in /api/check_user:", e)
         return jsonify({"error": str(e)}), 500
-  
+
 # Create User
 @app.route("/api/create_user", methods=["POST"])
 def create_user():
     """
     Create new user after consent accepted
-    """  
+    """
     try:
         client_id = get_client_id()
 
@@ -228,7 +228,7 @@ def api_get_session():
 
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
-    
+
 @app.route("/api/end_session", methods=["POST"])
 def end_session():
     try:
@@ -289,7 +289,7 @@ def update_activity():
 
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
-    
+
 @app.route("/api/validate_session", methods=["POST"])
 def validate_session():
     data = request.get_json()
@@ -306,7 +306,7 @@ def get_or_create_session(user_id):
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Expire sessions older than 1 day 
+    # Expire sessions older than 1 day
     cursor.execute("""
         UPDATE sessions
         SET session_end = CURRENT_TIMESTAMP
@@ -486,7 +486,7 @@ def interaction_event_logging():
         painting_id = data.get("painting_id")
         request_id = data.get("request_id")
         event_type = data.get("event_type")
-        value = data.get("value")  
+        value = data.get("value")
 
         if event_type not in EVENT_TYPES:
             return jsonify({"error": "Invalid event type"}), 400
@@ -500,7 +500,7 @@ def interaction_event_logging():
             "event_id": event_id
         })
     except Exception as e:
-        print("ERROR:", e)   
+        print("ERROR:", e)
         return jsonify({"error": str(e)}), 500
 
 def fetch_user_interactions(user_id):
@@ -589,7 +589,7 @@ def random_images(n):
     cur.execute("""
         SELECT painting_id, image_path
         FROM paintings
-        
+
         LIMIT %s;
     """, (n,))
 
@@ -610,12 +610,12 @@ def cold_start_images():
         request_id  = generate_request_id()
         user_id = data.get("user_id")
         session_id = data.get("session_id")
-        
+
         if not data:
             print("ERROR: No JSON body received")
             return jsonify({"success": False, "error": "No JSON body"}), 400
 
-        concepts = data.get("concepts", []) 
+        concepts = data.get("concepts", [])
 
         if not concepts:
             return jsonify({"success": False, "error": "No concepts provided"}), 400
@@ -630,7 +630,7 @@ def cold_start_images():
             concept_type = concept.get("type")
             label = concept.get("label")
 
-            _, top_ids, scores = get_thumbnail_for_concept(cursor, concept_type, label, top_k=5)
+            _, top_ids, scores = get_thumbnail_for_concept(cursor, concept_type, label, top_k=15)
 
             if not top_ids:
                 continue
@@ -726,7 +726,7 @@ def get_painting(painting_id):
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     cur.execute("""
-        SELECT 
+        SELECT
             p.painting_id,
             p.title,
             p.year_created,
@@ -813,7 +813,7 @@ def add_favourite():
         INSERT INTO favourites (user_id, painting_id)
         VALUES (%s, %s)
         ON CONFLICT DO NOTHING;
-    """, (user_id, painting_id))  
+    """, (user_id, painting_id))
 
     conn.commit()
     cur.close()
@@ -857,7 +857,7 @@ def get_favourites():
     except Exception as e:
         print("Error fetching favourites:", e)
         return jsonify({"error": str(e)}), 500
-    
+
 @app.route('/api/gallary')
 def get_gallery():
     import os
@@ -909,7 +909,7 @@ def style_transfer_api():
              "content": content_file.filename,
              "style": style_file.filename,
              "output": output_filename}
-    
+
     existing = []
     if os.path.exists(json_path):
         with open(json_path, "r") as f:
@@ -927,7 +927,7 @@ def download_file(filename):
 
 def extract_visual_features(image_rgb):
     # K-Means clustering to find the most popular colours - extract a colour palette
-    k=10 
+    k=10
     pixels = image_rgb.reshape(-1, 3)
     kmeans = KMeans(n_clusters=k, random_state=42).fit(pixels)
     colors = kmeans.cluster_centers_.astype(int)
@@ -936,20 +936,20 @@ def extract_visual_features(image_rgb):
     # classify what type of colour palatte an image has (warm/cold/black and white etc...)
     palette_norm = palette / 255.0
     warm_count, cool_count, gray_count = 0, 0, 0
-    
+
     for color in palette_norm:
         r, g, b = color
-        
+
         # if all channels are very close, check for greyscale/neutral
         if abs(r - g) < 0.1 and abs(r - b) < 0.1 and abs(g - b) < 0.1:
             gray_count += 1
             continue
-        
+
         # convert to HSV for warm/cool tone check
         hsv = cv2.cvtColor(np.uint8([[color*255]]), cv2.COLOR_RGB2HSV)[0][0]
-        h = hsv[0] 
-        
-        # hue in [0, 180] 
+        h = hsv[0]
+
+        # hue in [0, 180]
         if (0 <= h <= 20) or (160 <= h <= 180):  # reds
             warm_count += 1
         elif 20 < h <= 50:  # yellows/oranges
@@ -958,9 +958,9 @@ def extract_visual_features(image_rgb):
             cool_count += 1
         elif 130 < h < 160:  # purples/magentas
             cool_count += 1
-    
+
     total = warm_count + cool_count + gray_count
-    
+
     if gray_count == total:
         palette_type = "Black and White / Grayscale"
     elif warm_count > cool_count and warm_count >= total * 0.5:
@@ -971,13 +971,13 @@ def extract_visual_features(image_rgb):
         palette_type = "Mixed / Balanced"
     print("Palette type:", palette_type)
 
-    return palette, palette_type    
+    return palette, palette_type
 
 # Neural Style Transfer
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(device)
 
-image_size = 512 if torch.cuda.is_available() else 256  
+image_size = 512 if torch.cuda.is_available() else 256
 
 normalization_mean = [0.485, 0.456, 0.406]
 normalization_std = [0.229, 0.224, 0.225]
@@ -985,8 +985,8 @@ normalize = transforms.Normalize(mean=normalization_mean,
                                  std=normalization_std)
 
 transform = transforms.Compose([
-    transforms.Resize(image_size),              
-    transforms.CenterCrop(image_size),          
+    transforms.Resize(image_size),
+    transforms.CenterCrop(image_size),
     transforms.ToTensor(),
     normalize
 ])
@@ -994,7 +994,7 @@ transform = transforms.Compose([
 def load_image(image_path):
     image = Image.open(image_path).convert('RGB')
     image = transform(image).unsqueeze(0)  # Add batch dimension
-    return image.to(device) 
+    return image.to(device)
 
 
 def save_image(tensor, path):
@@ -1009,9 +1009,9 @@ def gram_matrix(tensor):
     b, c, h, w = tensor.size()
     features = tensor.view(c, h * w)      # reshape to (channels, height*width)
     G = torch.mm(features, features.t())  # compute Gram matrix (channels x channels)
-    return G / (2 * c * h * w)  
+    return G / (2 * c * h * w)
 
-# Load VGG19 model with pre-trained weights 
+# Load VGG19 model with pre-trained weights
 vgg = models.vgg19(weights=VGG19_Weights.DEFAULT).features.to(device).eval()
 for param in vgg.parameters():
     param.requires_grad = False
@@ -1019,7 +1019,7 @@ for param in vgg.parameters():
 #content_layer = ['conv4_2']
 #style_layers = ['conv_1', 'conv_2', 'conv_3', 'conv_4', 'conv_5']
 
-content_layer = '21' 
+content_layer = '21'
 style_layers = ['0', '5', '10', '19', '28']
 
 def get_content_feature(image):
@@ -1028,7 +1028,7 @@ def get_content_feature(image):
         x = layer(x)
         if str(i) == content_layer:
             return x
-        
+
 def get_style_features(image, model, layers):
     features = []
     x = image
@@ -1052,12 +1052,12 @@ def compute_style_loss(generated_features, style_features):
 def run_style_transfer(content_img_path, style_img_path, output_path, num_steps=300,
                     init_from_content=True,
                     show_progress=True):
-    
-    # Load images 
+
+    # Load images
     content_img = load_image(content_img_path)
     style_img = load_image(style_img_path)
 
-    # Extract Content and Style features from both images, respectively 
+    # Extract Content and Style features from both images, respectively
     style_features = get_style_features(style_img, vgg, style_layers)
     content_features = get_content_feature(content_img)
 
@@ -1072,7 +1072,7 @@ def run_style_transfer(content_img_path, style_img_path, output_path, num_steps=
     # Loss tracking for graph plot
     losses = {"total": [], "content": [], "style": []}
     current_losses = {"total": None, "content": None, "style": None}
-        
+
     def closure():
         optimizer.zero_grad()
 
@@ -1105,8 +1105,8 @@ def run_style_transfer(content_img_path, style_img_path, output_path, num_steps=
             print(f"Step {step}, Total Loss: {current_losses['total']:.4f}, "
             f"Content Loss: {current_losses['content']:.4f}, "
             f"Style Loss: {current_losses['style']:.4f}")
-        
-    # Save output 
+
+    # Save output
     with torch.no_grad():
         final_img = generated_img.detach().clone()
 
@@ -1115,7 +1115,7 @@ def run_style_transfer(content_img_path, style_img_path, output_path, num_steps=
 
     return output_path
 
-# Cold-Start Mitigation Strategy 
+# Cold-Start Mitigation Strategy
 # Concept structure i.e. what each box will contain
 def make_concept(concept_type, label, meta=None):
     return {
@@ -1204,7 +1204,7 @@ def sample_artists(artist_rows, k=8):
             }
         )
 
-    # Curated 
+    # Curated
     for aid, name, _, _ in head:
         if len(selected) >= 3:
             break
@@ -1304,7 +1304,7 @@ def sample_styles(styles_with_freq, k=7):
             break
         if style not in used:
             selected.append(build_style(style))
-            used.add(style)   
+            used.add(style)
 
     return selected[:k]
 
@@ -1419,7 +1419,7 @@ def get_box_titles():
     except Exception as e:
         print("ERROR in /api/get_box_titles:", e)
         return jsonify({"success": False, "error": str(e)}), 500
-    
+
 @app.route("/api/has_preferences", methods=["GET"])
 def has_preferences():
     try:
@@ -1494,7 +1494,7 @@ def log_user_preferences():
     except Exception as e:
         print("ERROR in /api/log_user_preferences:", e)
         return jsonify({"success": False, "error": str(e)}), 500
-    
+
 @app.route("/api/get_user_preferences", methods=["GET"])
 def get_user_preferences():
     try:
@@ -1504,7 +1504,7 @@ def get_user_preferences():
         cursor = conn.cursor()
 
         query = """
-            SELECT 
+            SELECT
                 preference_type AS type,
                 preference_label AS label
             FROM cold_start_preferences p
@@ -1613,7 +1613,7 @@ image_matrix = image_matrix / np.linalg.norm(image_matrix, axis=1, keepdims=True
 
 id_to_idx = {pid: i for i, pid in enumerate(image_ids)}
 
-def get_thumbnail_for_concept(cursor, concept_type, label, top_k=5):
+def get_thumbnail_for_concept(cursor, concept_type, label, top_k=10):
     """
     Returns a representative painting_id and the respective image_path
     """
@@ -1631,7 +1631,7 @@ def get_thumbnail_for_concept(cursor, concept_type, label, top_k=5):
 
     if len(valid_indices) == 0:
         return None, [], None
-    
+
     pids, indices = zip(*valid_indices)
     subset_embeddings = image_matrix[list(indices)]
     print(len(valid_indices))
@@ -1649,7 +1649,7 @@ def get_thumbnail_for_concept(cursor, concept_type, label, top_k=5):
     chosen_local_idx = np.random.choice(top_k_idx)
     chosen_painting_id = pids[chosen_local_idx]
 
-    return chosen_painting_id, top_k_painting_ids, scores[top_k_idx] 
+    return chosen_painting_id, top_k_painting_ids, scores[top_k_idx]
 
 def build_painting_url(image_path):
     normalized = image_path.replace("\\", "/").lstrip("/")
@@ -1696,7 +1696,7 @@ def generate_concept_thumbnail(concept_type, label):
 
 # User-Profile Creation
 # TO-DO: user can rank which are most imp to see how results change
-# Have a normalised wieght value 
+# Have a normalised wieght value
 # Create a weighted user profile vector based on interactions or cold start if new user
 INTERACTION_WEIGHTS = {
     "rating": 2.0,
@@ -1704,7 +1704,7 @@ INTERACTION_WEIGHTS = {
     "favourite": 3.0,
     "not_interested": -3.0,
     "save_to_gallery": 2.0,
-    "viewing_time": 1.0,  
+    "viewing_time": 1.0,
     "click": 0.5,
     "skip": -2.0
 }
@@ -1734,18 +1734,18 @@ def compute_interaction_weight(interaction):
         weight += INTERACTION_WEIGHTS["not_interested"]
 
     if interaction.get("review"):
-        weight += INTERACTION_WEIGHTS["review"]  
+        weight += INTERACTION_WEIGHTS["review"]
 
     if interaction.get("save_to_gallery"):
         weight += INTERACTION_WEIGHTS["save_to_gallery"]
 
-    # Implicit Feedback has a lower signal since it's relatively weak 
+    # Implicit Feedback has a lower signal since it's relatively weak
     if interaction.get("click"):
         weight += INTERACTION_WEIGHTS["click"]
 
     viewing_time = interaction.get("viewing_time")
     if viewing_time is not None:
-        # Log-scaled dwell time 
+        # Log-scaled dwell time
         norm_time = np.log1p(viewing_time) / np.log(60)
         norm_time = min(norm_time, 1.0)  # cap
         weight += INTERACTION_WEIGHTS["viewing_time"] * norm_time
@@ -1779,13 +1779,13 @@ def preprocess_image(image_path):
         return img
     except:
         return None
-    
+
 model_resnet = models.resnet50(pretrained=True)
 
 # Remove final classification layer (fc)
 model_resnet = torch.nn.Sequential(*list(model_resnet.children())[:-1])
 model_resnet.to(device)
-model_resnet.eval()  
+model_resnet.eval()
 
 class VGG19FeatureExtractor(nn.Module):
     def __init__(self):
@@ -1793,7 +1793,7 @@ class VGG19FeatureExtractor(nn.Module):
         vgg = models.vgg19(weights=models.VGG19_Weights.IMAGENET1K_V1)
         self.features = vgg.features
 
-        # Freeze 
+        # Freeze
         for param in self.features.parameters():
             param.requires_grad = False
 
@@ -1824,7 +1824,7 @@ def extract_resnet_features(model, img_tensor):
         features = model(img_tensor)
 
     features = features.squeeze(-1).squeeze(-1)  # (1, 2048)
-    
+
     return features.cpu().numpy().flatten()
 
 def extract_vgg_19_features(model, img_tensor):
@@ -1833,7 +1833,7 @@ def extract_vgg_19_features(model, img_tensor):
     with torch.no_grad():
         features = model(img_tensor) # (1, 1280)
 
-    return features.cpu().numpy().flatten() 
+    return features.cpu().numpy().flatten()
 
 # Load embeddings
 data = joblib.load('data/resnet50_embeddings.pkl')
@@ -1848,12 +1848,21 @@ embeddings_resnet_norm = embeddings_resnet / np.linalg.norm(embeddings_resnet, a
 embeddings_vgg_norm = embeddings_vgg / np.linalg.norm(embeddings_vgg, axis=1, keepdims=True)
 
 pcaRESNET = PCA(n_components=512) # or 128, 512 depending on tradeoff
-pcaVGG = PCA(n_components=256)  
+pcaVGG = PCA(n_components=256)
 pca_resnet = pcaRESNET.fit_transform(embeddings_resnet_norm)
 pca_vgg = pcaVGG.fit_transform(embeddings_vgg_norm)
 
 resnet_norm = pca_resnet / np.linalg.norm(pca_resnet, axis=1, keepdims=True)
 vgg_norm = pca_vgg / np.linalg.norm(pca_vgg, axis=1, keepdims=True)
+
+NUM_CLUSTERS = 20 
+kmeans = KMeans(n_clusters=NUM_CLUSTERS, random_state=42, n_init=10)
+cluster_labels = kmeans.fit_predict(resnet_norm)
+
+# map cluster to indices
+cluster_to_items = {i: [] for i in range(NUM_CLUSTERS)}
+for idx, c in enumerate(cluster_labels):
+    cluster_to_items[c].append(idx)
 
 def score_paintings_from_interactions(interactions, embeddings, id_to_idx):
     """
@@ -1870,7 +1879,7 @@ def score_paintings_from_interactions(interactions, embeddings, id_to_idx):
         pid = interaction["painting_id"]
         w = interaction["weight"]
 
-        # Skip weak signals 
+        # Skip weak signals
         if w < 1.0:
             continue
 
@@ -1878,7 +1887,7 @@ def score_paintings_from_interactions(interactions, embeddings, id_to_idx):
             continue
 
         idx = id_to_idx[pid]
-        vec = embeddings[idx]   # already normalised 
+        vec = embeddings[idx]   
 
         # cosine similarity with ALL paintings
         sim = embeddings @ vec   # shape [N]
@@ -1904,9 +1913,8 @@ def get_seen_paintings(user_id):
 
     cur.execute("""
         SELECT DISTINCT painting_id
-        FROM interaction_events
+        FROM recommendations
         WHERE user_id = %s
-        AND event_type IN ('view_start', 'click', 'favourite', 'rating')
     """, (user_id,))
 
     seen = {row[0] for row in cur.fetchall()}
@@ -1930,6 +1938,8 @@ def recommend_resnet():
     k = data.get("k", 10)
 
     request_id = generate_request_id()
+
+    # Build user scores
     interactions = fetch_user_interactions(user_id)
     for i in interactions:
         i["weight"] = compute_interaction_weight(i)
@@ -1942,24 +1952,55 @@ def recommend_resnet():
             "error": "No strong interaction signal"
         }), 200
 
-    top_k_idx = np.argsort(scores)[::-1]
-    print("painting IDs: ", top_k_idx)
-    print("scores: ", scores)
-
+    # Prepare ranking input
     seen = get_seen_paintings(user_id)
+    ranked_indices = np.argsort(scores)[::-1]
+    filtered_ranked = [
+        idx for idx in ranked_indices
+        if int(image_ids[idx]) not in seen
+        and scores[idx] >= 0.05
+    ]
+
+    # Cluster-based diversification
+    selected = []
+    cluster_counts = {c: 0 for c in range(NUM_CLUSTERS)}
+
+    while len(selected) < k and filtered_ranked:
+
+        best_idx = None
+        best_score = -1
+        best_cluster = None
+
+        for idx in filtered_ranked:
+
+            cluster = cluster_labels[idx]
+            base_score = scores[idx]
+
+            # soft penalty for repeated clusters
+            diversity_penalty = 0.15 * cluster_counts[cluster]
+
+            adjusted_score = base_score - diversity_penalty
+
+            if adjusted_score > best_score:
+                best_score = adjusted_score
+                best_idx = idx
+                best_cluster = cluster
+
+        if best_idx is None:
+            break
+
+        selected.append(best_idx)
+        cluster_counts[best_cluster] += 1
+
+        filtered_ranked.remove(best_idx)
+
+    # Build response
     results = []
     db_rows = []
 
-    rank = 0
-    for idx in top_k_idx:
+    for rank, idx in enumerate(selected):
         painting_id = int(image_ids[idx])
-        score = float(scores[idx])  
-
-        if painting_id in seen:
-            continue
-
-        if score < 0.05:
-            continue
+        score = float(scores[idx])
 
         results.append({
             "painting_id": painting_id,
@@ -1975,11 +2016,6 @@ def recommend_resnet():
             score,
             datetime.utcnow()
         ))
-
-        rank += 1
-
-        if rank >= k:
-            break
 
     painting_ids = [r["painting_id"] for r in results]
     db_paintings = fetch_paintings(painting_ids)
@@ -2001,25 +2037,25 @@ def recommend_resnet():
         })
 
     # Store recommendations in DB
-    # conn = get_db_connection()
-    # cur = conn.cursor()
+    conn = get_db_connection()
+    cur = conn.cursor()
 
-    # execute_values(cur, """
-    #     INSERT INTO recommendations (
-    #         session_id,
-    #         user_id,
-    #         painting_id,
-    #         request_id,
-    #         rank,
-    #         score,
-    #         created_at
-    #     )
-    #     VALUES %s
-    # """, db_rows)
+    execute_values(cur, """
+        INSERT INTO recommendations (
+            session_id,
+            user_id,
+            painting_id,
+            request_id,
+            rank,
+            score,
+            created_at
+        )
+        VALUES %s
+    """, db_rows)
 
-    # conn.commit()
-    # cur.close()
-    # conn.close()
+    conn.commit()
+    cur.close()
+    conn.close()
 
     return jsonify({
         "user_id": user_id,
@@ -2028,7 +2064,7 @@ def recommend_resnet():
     })
 
 def retrieve_top_k(query_path, model_name, model, embeddings, transform, k=10):
-    # Load and preprocess query 
+    # Load and preprocess query
     img = preprocess_image(query_path)
 
     # Extract features, L2 Norm, Apply PCA, L2 Norm again, Cosine similarity
@@ -2045,25 +2081,25 @@ def retrieve_top_k(query_path, model_name, model, embeddings, transform, k=10):
         query_embeddings = query_embeddings / np.linalg.norm(query_embeddings)
         scores = embeddings @ query_embeddings
 
-    # Top-k retreival 
+    # Top-k retreival
     top_k_idx = np.argsort(scores)[::-1][:k]
 
     return top_k_idx, scores[top_k_idx]
 
-# SBERT 
-# Title preprocessing i.e. NULL/missing handling and text normalisation 
+# SBERT
+# Title preprocessing i.e. NULL/missing handling and text normalisation
 ROMAN_NUMERAL_PATTERN = re.compile(r'\b(i{1,3}|iv|v|vi{0,3}|ix|x)\b', re.IGNORECASE)
 
 def normalize_roman_numerals(text: str) -> str:
     return ROMAN_NUMERAL_PATTERN.sub(lambda m: m.group(0).upper(), text)
 
 def process_title(title: str) -> str:
-    # Handle NULL/missing values 
+    # Handle NULL/missing values
     if title is None or title.strip() == "":
         return "unknown title"
 
     # Normalise whitespace
-    title = title.strip() 
+    title = title.strip()
     title = re.sub(r'\s+', ' ', title)
 
     # Fix broken apostrophes e.g. "Martin S" → "Martin's" and normalise roman numerals
@@ -2083,17 +2119,17 @@ def safe_cut(text, length):
     cut = text[:length]
     return cut[:cut.rfind(" ")] if " " in cut else cut
 
-# Bio preprocessing, including character cutoff since bio fields contain the most 
+# Bio preprocessing, including character cutoff since bio fields contain the most
 # characters and heavily bias the embedding space if left untrimmed
 def process_bio(bio: str, max_chars=2000) -> str:
     if bio is None or bio.strip() == "":
         return "no biography available"
-    
+
     # Normalise whitespace, including newlines and tabs
     bio = bio.strip()
     bio = re.sub(r'\s+', ' ', bio)
 
-    # Truncate so that bio is token-safe for SBERT 
+    # Truncate so that bio is token-safe for SBERT
     if len(bio) > max_chars:
         head_len = int(max_chars * 0.6)
         tail_len = max_chars - head_len
@@ -2105,10 +2141,10 @@ def process_bio(bio: str, max_chars=2000) -> str:
 
     return bio
 
-# This method can be used for all categorical fields, to handle NULL/missing values, convert all fields to lowercase apart 
-# from artist and remove excess whitespace 
+# This method can be used for all categorical fields, to handle NULL/missing values, convert all fields to lowercase apart
+# from artist and remove excess whitespace
 def process_categorical_field(field_value: str, field_name: str = None) -> str:
-    # Handle NULL/missing values 
+    # Handle NULL/missing values
     if field_value is None or field_value.strip() == "":
         return f"unknown {field_name}"
 
@@ -2121,22 +2157,22 @@ def process_categorical_field(field_value: str, field_name: str = None) -> str:
 
     return field_value
 
-# This method can be used for all multi-value fields, it handles nulls/missing values, 
-# converts all comma seperated items to lower case, and applies the respective preprocessing for description_tags, 
+# This method can be used for all multi-value fields, it handles nulls/missing values,
+# converts all comma seperated items to lower case, and applies the respective preprocessing for description_tags,
 # joining all value segments using |
 def process_multi_value_field(feild_value: str, field_name: str = None) -> str:
     # Handle NULL/missing values
     if feild_value is None or feild_value.strip() == "":
-        return f"unknown {field_name}" 
+        return f"unknown {field_name}"
 
-    # Split on comma 
+    # Split on comma
     items = feild_value.split(",")
     cleaned = []
     for item in items:
         item = item.strip().lower()
         if item == "":
             continue
-        
+
         # Replace hyphens with space when in-between words only and normalise internal whitespace
         if field_name == "description tags":
             item = re.sub(r'(?<=\w)-(?=\w)', ' ', item)
@@ -2147,22 +2183,22 @@ def process_multi_value_field(feild_value: str, field_name: str = None) -> str:
 
                 # Safety checks to avoid bad splits (e.g. single char fragments)
                 if (len(split_words) > 1 and all(len(w) > 2 for w in split_words) and len(" ".join(split_words)) >= len(item) * 0.8):
-                    item = " ".join(split_words) 
+                    item = " ".join(split_words)
 
         item = re.sub(r'\s+', ' ', item)
         cleaned.append(item)
 
     if not cleaned:
-        return f"unknown {field_name}" 
+        return f"unknown {field_name}"
 
     # Deduplicate while preserving order
     unique_items = list(dict.fromkeys(cleaned))
 
     return " | ".join(unique_items)
 
-# Instead of using years, encode them as semantic 
+# Instead of using years, encode them as semantic
 def process_year(year_created):
-    # NULL/missing 
+    # NULL/missing
     if year_created is None or str(year_created).strip() == "":
         return "unknown period"
 
@@ -2171,7 +2207,7 @@ def process_year(year_created):
     except (ValueError, TypeError):
         return "unknown period"
 
-    # Period mapping 
+    # Period mapping
     if year < 1400:
         return "medieval period 14th century"
     elif year < 1600:
@@ -2191,7 +2227,7 @@ def process_year(year_created):
     elif year <= 2000:
         return "late 20th century contemporary"
     else:
-        return "contemporary period 20th century" 
+        return "contemporary period 20th century"
 
 def format_text_fields(title, year_created, genre, art_style, media, description_tags, artist, nationality, fields, art_movements, bio):
     title_processed = process_title(title)
@@ -2206,7 +2242,7 @@ def format_text_fields(title, year_created, genre, art_style, media, description
     art_movements_processed = process_multi_value_field(art_movements, "art movements")
     bio_processed = process_bio(bio)
 
-    # Structured reperesntation 
+    # Structured reperesntation
     structured = {
         "title": title_processed,
         "year_period": year_processed,
@@ -2224,7 +2260,7 @@ def format_text_fields(title, year_created, genre, art_style, media, description
     return structured
 processed_data = joblib.load("data/processed_data.pkl")
 
-# Load SBERT model to be used for per-field embedding extraction 
+# Load SBERT model to be used for per-field embedding extraction
 model = SentenceTransformer('all-mpnet-base-v2') # all-roberta-large-v1, paraphrase-multilingual-mpnet-base-v2
 def prepare_field_text(value):
     if isinstance(value, list):
@@ -2235,7 +2271,7 @@ def prepare_field_text(value):
 embedding_matrices = joblib.load("data/SBERT_embedding_matrices.pkl")
 
 #query_clean = format_text_fields(query["title"], query["year_created"], query["genre"], query["art_style"], query["media"],
-                    #query["description_tags"], query["artist"], query["art_movements"], query["fields"], query["nationality"], 
+                    #query["description_tags"], query["artist"], query["art_movements"], query["fields"], query["nationality"],
                     #query["bio"])
 
 def encode_query_sbert(query_structured, model):
@@ -2261,7 +2297,7 @@ WEIGHTS = {
     "nationality": 0.03,
     "fields": 0.03,
     "art_movements": 0.1,
-    "bio": 0.03   
+    "bio": 0.03
 }
 
 def normalise_weights(weights):
@@ -2280,7 +2316,7 @@ def compute_similarity_per_field_sbert(query_embeddings, embedding_matrices):
             similarities[field] = np.zeros(matrix.shape[0])
             continue
 
-        sim = matrix @ q   
+        sim = matrix @ q
         similarities[field] = sim
 
     return similarities
@@ -2312,7 +2348,7 @@ def recommend_sbert(query_structured, model, embedding_matrices, weights, painti
     return top_indices, scores, similarities
 
 # CLIP
-# Load CLIP Model and Processor  
+# Load CLIP Model and Processor
 model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32", use_safetensors=True).to(device)
 processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
 
@@ -2335,7 +2371,7 @@ def retrieve_by_text(query, top_k=10):
     q_emb = q_emb.cpu().numpy()
 
     # cosine similarity
-    scores = image_matrix @ q_emb.T  
+    scores = image_matrix @ q_emb.T
     top_k_idx = np.argsort(scores[:, 0])[::-1][:top_k]
 
     return top_k_idx, scores[top_k_idx]
@@ -2377,9 +2413,9 @@ def fetch_paintings(painting_ids):
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-    # Preserve order 
+    # Preserve order
     cur.execute("""
-        SELECT 
+        SELECT
             painting_id,
             image_path
         FROM paintings_and_artists_metadata_bert
@@ -2393,6 +2429,47 @@ def fetch_paintings(painting_ids):
     conn.close()
 
     return rows
+
+@app.route("/api/log_search_query", methods=["POST"])
+def log_search_query():
+    try:
+        data = request.get_json()
+
+        user_id = data.get("user_id")
+        session_id = data.get("session_id")
+        query_text = data.get("query_text")
+
+        if not user_id or not session_id or not query_text:
+            return jsonify({
+                "success": False,
+                "error": "Missing required fields"
+            }), 400
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        cur.execute("""
+            INSERT INTO clip_search_queries (user_id, session_id, query_text)
+            VALUES (%s, %s, %s)
+            RETURNING query_id;
+        """, (user_id, session_id, query_text))
+
+        query_id = cur.fetchone()[0]
+        conn.commit()
+
+        cur.close()
+        conn.close()
+
+        return jsonify({
+            "success": True,
+            "query_id": query_id
+        })
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
 
 # TO-RUN: python app.py
 if __name__ == "__main__":
