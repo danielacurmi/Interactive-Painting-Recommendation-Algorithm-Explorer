@@ -45,6 +45,7 @@ x-volumes:
     volumes:
       - ./shared_utils:/app/shared_utils:ro
       - ./model_cache:/models_cache
+      - ./Website/paintings:/app/paintings
       - ./Website/data:/app/data
 
 # --- Traefik Configuration Anchors ---
