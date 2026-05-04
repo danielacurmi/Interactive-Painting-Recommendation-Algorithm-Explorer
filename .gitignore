@@ -1,4 +1,5 @@
 Website/data/
+Website/paintings/
 Testing scripts/features_extracted.h5
 scrapWikiArt/data/img
 model_cache/hub/checkpoints/vgg19-dcbb9e9d.pth
@@ -6,3 +7,4 @@ model_cache/hub/checkpoints/vgg19-dcbb9e9d.pth
 *.pt
 *.h5
 *.npz
+model_cache
