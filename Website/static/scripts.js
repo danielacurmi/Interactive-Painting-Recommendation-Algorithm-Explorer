@@ -1,5 +1,6 @@
 let isColdStartPhase = true;
 let userConcepts = [];
+const requestIdByPainting = {};
 
 document.addEventListener("DOMContentLoaded", async () => {
     await checkUser();
@@ -24,6 +25,14 @@ function initRecommendations() {
             let images = [];
 
             try {
+                const user_id = localStorage.getItem("user_id");
+                const session_id = localStorage.getItem("session_id");
+
+                if (!user_id || !session_id) {
+                    console.error("Missing user/session id");
+                    return;
+                }
+                
                 // Initial set of recommendations
                 if (isColdStartPhase) {
                     console.log("Fetching cold start images...");
@@ -34,7 +43,9 @@ function initRecommendations() {
                             "Content-Type": "application/json"
                         },
                         body: JSON.stringify({
-                            concepts: userConcepts
+                            concepts: userConcepts,
+                            user_id: parseInt(localStorage.getItem("user_id")),
+                            session_id: parseInt(localStorage.getItem("session_id"))
                         })
                     });
 
@@ -42,6 +53,7 @@ function initRecommendations() {
 
                     if (data.success && data.paintings) {
                         images = data.paintings;
+                        currentRequestId = data.request_id;
                         isColdStartPhase = false; // switch to random after first batch
                     }
                 } 
@@ -59,12 +71,18 @@ function initRecommendations() {
 
             fetching = false;
 
-            return images.map(img => ({
-                id: img.painting_id,
-                url: img.image_url 
-                    ? img.image_url   // cold start format
-                    : window.appPath(`/${String(img.image_path).replace(/^\/+/, "")}`) // random format
-            }));
+            return images.map(img => {
+                const id = img.painting_id;
+
+                requestIdByPainting[id] = img.request_id;
+
+                return {
+                    id: id,
+                    url: img.image_url 
+                        ? img.image_url
+                        : window.appPath(`/${String(img.image_path).replace(/^\/+/, "")}`)
+                };
+            });
         };
 
         const createCard = (imageData, col) => {
@@ -303,7 +321,8 @@ function logInteraction(painting_id, event_type, value = null) {
         user_id: parseInt(user_id),
         painting_id: parseInt(painting_id),
         event_type: event_type,
-        value: value
+        value: value,
+        request_id: requestIdByPainting[painting_id]
     };
 
     console.log("Sending event:", payload);

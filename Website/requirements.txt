@@ -16,3 +16,4 @@ transformers
 grad-cam
 wordninja
 sentence_transformers
+uuid

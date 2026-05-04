@@ -13,6 +13,7 @@ from PIL import Image
 from datetime import datetime
 import psycopg2
 import psycopg2.extras
+from psycopg2.extras import execute_values
 from collections import defaultdict 
 from torchvision.models import VGG19_Weights
 import joblib
@@ -24,6 +25,7 @@ from pytorch_grad_cam import GradCAM
 from pytorch_grad_cam.utils.image import show_cam_on_image
 import wordninja
 from sentence_transformers import SentenceTransformer
+import uuid
 
 app = Flask(__name__)
 BASE_PATH = os.environ.get("ARTRECSYS_BASE_PATH", "/artrecsys").rstrip("/")
@@ -371,15 +373,15 @@ EVENT_TYPES = {
     "skip"
 }
 
-def log_event(session_id, user_id, painting_id, event_type, event_value, metadata=None):
+def log_event(session_id, user_id, painting_id, event_type, event_value, request_id, metadata=None):
     conn = get_db_connection()
     cur = conn.cursor()
 
     cur.execute("""
-        INSERT INTO interaction_events (session_id, user_id, painting_id, event_type, event_value, timestamp)
-        VALUES (%s, %s, %s, %s, %s, NOW())
+        INSERT INTO interaction_events (session_id, user_id, painting_id, event_type, event_value, timestamp, request_id)
+        VALUES (%s, %s, %s, %s, %s, NOW(), %s)
         RETURNING event_id;
-    """, (session_id, user_id, painting_id, event_type, event_value))
+    """, (session_id, user_id, painting_id, event_type, event_value, request_id))
 
     event_id = cur.fetchone()[0]
 
@@ -389,16 +391,16 @@ def log_event(session_id, user_id, painting_id, event_type, event_value, metadat
 
     return event_id
 
-def ensure_summary(session_id, user_id, painting_id):
+def ensure_summary(session_id, user_id, painting_id, request_id):
     conn = get_db_connection()
     cur = conn.cursor()
 
     cur.execute("""
-        INSERT INTO interaction_summary (session_id, user_id, painting_id)
-        VALUES (%s, %s, %s)
+        INSERT INTO interaction_summary (session_id, user_id, painting_id, request_id)
+        VALUES (%s, %s, %s, %s)
         ON CONFLICT (session_id, user_id, painting_id)
         DO NOTHING;
-    """, (session_id, user_id, painting_id))
+    """, (session_id, user_id, painting_id, request_id))
 
     conn.commit()
     cur.close()
@@ -437,8 +439,7 @@ def update_summary(session_id, user_id, painting_id, event_type, value=None):
     elif event_type == "click":
         cur.execute("""
             UPDATE interaction_summary
-            SET click = True,
-                skip = False
+            SET click = True
             WHERE session_id=%s AND user_id=%s AND painting_id=%s;
         """, (session_id, user_id, painting_id))
 
@@ -483,14 +484,15 @@ def interaction_event_logging():
         session_id = data.get("session_id")
         user_id = data.get("user_id")
         painting_id = data.get("painting_id")
+        request_id = data.get("request_id")
         event_type = data.get("event_type")
         value = data.get("value")  
 
         if event_type not in EVENT_TYPES:
             return jsonify({"error": "Invalid event type"}), 400
 
-        event_id = log_event(session_id, user_id, painting_id, event_type, value)
-        ensure_summary(session_id, user_id, painting_id)
+        event_id = log_event(session_id, user_id, painting_id, event_type, value, request_id)
+        ensure_summary(session_id, user_id, painting_id, request_id)
         update_summary(session_id, user_id, painting_id, event_type, value)
 
         return jsonify({
@@ -500,6 +502,83 @@ def interaction_event_logging():
     except Exception as e:
         print("ERROR:", e)   
         return jsonify({"error": str(e)}), 500
+
+def fetch_user_interactions(user_id):
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    cur.execute("""
+        SELECT
+            r.painting_id,
+            r.rank,
+
+            MAX(s.viewing_time_seconds) AS viewing_time,
+            MAX(s.rating) AS rating,
+            BOOL_OR(s.favourite) AS favourite,
+            BOOL_OR(s.not_interested) AS not_interested,
+            BOOL_OR(s.save_to_gallary) AS save_to_gallery,
+            BOOL_OR(s.click) AS click,
+            MAX(s.review) AS review,
+
+            CASE
+                WHEN r.request_id IN (
+                    SELECT DISTINCT r1.request_id
+                    FROM recommendations r1
+                    WHERE EXISTS (
+                        SELECT 1
+                        FROM recommendations r2
+                        WHERE r2.user_id = r1.user_id
+                        AND r2.created_at > r1.created_at
+                    )
+                )
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM interaction_summary s2
+                    WHERE s2.request_id = r.request_id
+                    AND s2.painting_id = r.painting_id
+                    AND (
+                        s2.click = TRUE OR
+                        s2.favourite = TRUE OR
+                        s2.rating IS NOT NULL OR
+                        s2.viewing_time_seconds > 2
+                    )
+                )
+                THEN TRUE
+                ELSE FALSE
+            END AS skip
+
+    FROM recommendations r
+    LEFT JOIN interaction_summary s
+        ON r.painting_id = s.painting_id
+    AND r.user_id = s.user_id
+    AND r.request_id = s.request_id
+
+    WHERE r.user_id = %s
+
+    GROUP BY r.painting_id, r.request_id, r.rank;
+                """, (user_id,))
+    rows = cur.fetchall()
+
+    cur.close()
+    conn.close()
+
+    interactions = []
+
+    for r in rows:
+        interactions.append({
+            "painting_id": r["painting_id"],
+            "rank": r["rank"],
+            "viewing_time": r["viewing_time"],
+            "rating": r["rating"],
+            "favourite": r["favourite"],
+            "not_interested": r["not_interested"],
+            "save_to_gallery": r["save_to_gallery"],
+            "click": r["click"],
+            "review": r["review"],
+            "skip": r["skip"]
+        })
+
+    return interactions
 
 # Get painting and artist metadata for each painting along with the image from the respective file path
 @app.route("/api/random-images/<int:n>")
@@ -521,17 +600,22 @@ def random_images(n):
 
     return jsonify(rows)
 
+def generate_request_id():
+    return str(uuid.uuid4())
+
 @app.route("/api/cold-start-images", methods=["POST"])
 def cold_start_images():
     try:
         data = request.get_json()
-        print("RAW REQUEST DATA:", data)
+        request_id  = generate_request_id()
+        user_id = data.get("user_id")
+        session_id = data.get("session_id")
+        
         if not data:
             print("ERROR: No JSON body received")
             return jsonify({"success": False, "error": "No JSON body"}), 400
 
         concepts = data.get("concepts", []) 
-        print("CONCEPTS RECEIVED:", concepts)
 
         if not concepts:
             return jsonify({"success": False, "error": "No concepts provided"}), 400
@@ -546,7 +630,7 @@ def cold_start_images():
             concept_type = concept.get("type")
             label = concept.get("label")
 
-            _, top_ids, _ = get_thumbnail_for_concept(cursor, concept_type, label, top_k=5)
+            _, top_ids, scores = get_thumbnail_for_concept(cursor, concept_type, label, top_k=5)
 
             if not top_ids:
                 continue
@@ -583,15 +667,43 @@ def cold_start_images():
 
                 paintings.append({
                     "painting_id": pid,
-                    "image_url": build_painting_url(row["image_path"])
+                    "image_url": build_painting_url(row["image_path"]),
+                    "request_id": request_id
                 })
 
+        execute_values(cursor, """
+            INSERT INTO recommendations (
+                session_id,
+                user_id,
+                painting_id,
+                request_id,
+                rank,
+                score,
+                created_at
+            )
+            VALUES %s
+            ON CONFLICT DO NOTHING;
+        """, [
+            (
+                session_id,
+                user_id,
+                p["painting_id"],
+                request_id,
+                rank,
+                p.get("score", 0.0),
+                datetime.utcnow()
+            )
+            for rank, p in enumerate(paintings)
+        ])
+
         random.shuffle(paintings)
+        conn.commit()
         cursor.close()
         conn.close()
 
         return jsonify({
             "success": True,
+            "request_id": request_id,
             "paintings": paintings
         })
 
@@ -1537,7 +1649,7 @@ def get_thumbnail_for_concept(cursor, concept_type, label, top_k=5):
     chosen_local_idx = np.random.choice(top_k_idx)
     chosen_painting_id = pids[chosen_local_idx]
 
-    return chosen_painting_id, top_k_painting_ids, scores 
+    return chosen_painting_id, top_k_painting_ids, scores[top_k_idx] 
 
 def build_painting_url(image_path):
     normalized = image_path.replace("\\", "/").lstrip("/")
@@ -1583,7 +1695,23 @@ def generate_concept_thumbnail(concept_type, label):
         conn.close()
 
 # User-Profile Creation
+# TO-DO: user can rank which are most imp to see how results change
+# Have a normalised wieght value 
 # Create a weighted user profile vector based on interactions or cold start if new user
+INTERACTION_WEIGHTS = {
+    "rating": 2.0,
+    "review": 0.5,
+    "favourite": 3.0,
+    "not_interested": -3.0,
+    "save_to_gallery": 2.0,
+    "viewing_time": 1.0,  
+    "click": 0.5,
+    "skip": -2.0
+}
+
+def rank_discount(rank):
+    return 1.0 / np.log2(rank + 2)
+
 def l2_normalise(feature_vector):
     feature_vector = np.array(feature_vector, dtype=np.float64)
     norm = np.linalg.norm(feature_vector)
@@ -1601,57 +1729,62 @@ def compute_interaction_weight(interaction):
     """
     weight = 0.0
 
-    # Explicit feedback 
-    if interaction.get("rating") is not None:
-        weight += 2.0 * (interaction["rating"] / 5.0)
-
-    if interaction.get("review") is not None:
-        weight += 1.5  # assume positive sentiment for now, for future work include sentiment analysis
+    # Explicit Feedback with high signal since it's more indicative of user preferences
+    rating = interaction.get("rating")
+    if rating is not None:
+        if rating >= 4:
+            weight += INTERACTION_WEIGHTS["rating"] * (rating / 5.0)
+        elif rating <= 2:
+            weight -= INTERACTION_WEIGHTS["rating"] * (1 - rating / 5.0)
 
     if interaction.get("favourite"):
-        weight += 3.0
+        weight += INTERACTION_WEIGHTS["favourite"]
 
     if interaction.get("not_interested"):
-        weight -= 3.0
+        weight += INTERACTION_WEIGHTS["not_interested"]
+
+    if interaction.get("review"):
+        weight += INTERACTION_WEIGHTS["review"]  
 
     if interaction.get("save_to_gallery"):
-        weight += 2.0
-        
-    # TO-DO: user can rank which are most imp to see how results change
-    # Have a normalised wieght value 
+        weight += INTERACTION_WEIGHTS["save_to_gallery"]
 
-    # Implicit Feedback
-    if interaction.get("viewing_time") is not None:
-        # normalize time (e.g. cap at 60 sec)
-        weight += min(interaction["viewing_time"] / 60.0, 1.0)
-
+    # Implicit Feedback has a lower signal since it's relatively weak 
     if interaction.get("click"):
-        weight += 0.5
+        weight += INTERACTION_WEIGHTS["click"]
 
-    # click stream frequency boost
-    if interaction.get("click_stream_count") is not None:
-        weight += 0.2 * interaction["click_stream_count"]
+    viewing_time = interaction.get("viewing_time")
+    if viewing_time is not None:
+        # Log-scaled dwell time 
+        norm_time = np.log1p(viewing_time) / np.log(60)
+        norm_time = min(norm_time, 1.0)  # cap
+        weight += INTERACTION_WEIGHTS["viewing_time"] * norm_time
+
+    # Skip is a derived negative interaction
+    if interaction.get("skip"):
+        rank = interaction.get("rank", 10)  # fallback
+
+        # Rank discount (log-based)
+        discount = rank_discount(rank)
+
+        weight += INTERACTION_WEIGHTS["skip"] * discount
 
     return weight
 
-def create_user_profile(interactions, features_file_path, cold_start_preferences=None):
+def create_user_profile(interactions, features_file_path):
     """
     interactions: list of dicts, each containing:
         {
             "painting_id": int,
             "click": bool,
             "viewing_time": int,
+            "skip": bool,
             "rating": int,
             "review": str,
             "favourite": bool,
             "not_interested": bool,
             "save_to_gallery": bool,
             "click_stream_count": int
-        }
-
-    cold_start_prefs: dict 
-        {
-            "preferred_painting_ids": [ids derived from selected artists/styles/etc.]
         }
     """
 
@@ -1678,28 +1811,9 @@ def create_user_profile(interactions, features_file_path, cold_start_preferences
             weighted_sum += weight * vector
             total_weight += abs(weight)
 
-        # Cold start mitigation  
-        if cold_start_preferences and "preferred_painting_ids" in cold_start_preferences:
-            cold_vectors = []
-
-            for pid in cold_start_preferences["preferred_painting_ids"]:
-                cold_vectors.append(features[pid])
-
-            if len(cold_vectors) > 0:
-                cold_vector = np.mean(cold_vectors, axis=0)
-
-                # give moderate importance
-                cold_weight = 2.0
-
-                if weighted_sum is None:
-                    weighted_sum = np.zeros_like(cold_vector)
-
-                weighted_sum += cold_weight * cold_vector
-                total_weight += cold_weight
-
     # Final normalisation
     if weighted_sum is None:
-        raise ValueError("No valid interactions or cold-start data available")
+        raise ValueError("No valid interactions available")
 
     user_profile = weighted_sum / total_weight
     user_profile = l2_normalise(user_profile)
