@@ -1,6 +1,7 @@
 let isColdStartPhase = true;
 let userConcepts = [];
 const requestIdByPainting = {};
+let hasUserInteracted = false;
 
 document.addEventListener("DOMContentLoaded", async () => {
     await checkUser();
@@ -32,7 +33,7 @@ function initRecommendations() {
                     console.error("Missing user/session id");
                     return;
                 }
-                
+
                 // Initial set of recommendations
                 if (isColdStartPhase) {
                     console.log("Fetching cold start images...");
@@ -57,12 +58,38 @@ function initRecommendations() {
                         isColdStartPhase = false; // switch to random after first batch
                     }
                 } 
-                // Random
+                // ResNet-50 Recommendations
                 else {
-                    console.log("Fetching random images...");
+                    if (!hasUserInteracted) {
+                        console.log("Skipping recommender - no interactions yet");
+                        return [];
+                    }
+                    console.log("Fetching recommendations using ResNet-50 ...");
 
-                    const response = await fetch(window.appPath(`/api/random-images/30`));
-                    images = await response.json();
+                    const user_id = localStorage.getItem("user_id");
+                    const session_id = localStorage.getItem("session_id");
+
+                    const response = await fetch(window.appPath(`/api/recommend_resnet`), {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({
+                            user_id: parseInt(user_id),
+                            session_id: parseInt(session_id),
+                            k: 10
+                        })
+                    });
+
+                    const data = await response.json();
+
+                    if (data.recommendations) {
+                        images = data.recommendations;
+                        currentRequestId = data.request_id;
+                    } else {
+                        console.error("No recommendations returned");
+                        images = [];
+                    }
                 }
 
             } catch (err) {
@@ -73,14 +100,11 @@ function initRecommendations() {
 
             return images.map(img => {
                 const id = img.painting_id;
-
-                requestIdByPainting[id] = img.request_id;
+                requestIdByPainting[id] = img.request_id || currentRequestId;
 
                 return {
                     id: id,
-                    url: img.image_url 
-                        ? img.image_url
-                        : window.appPath(`/${String(img.image_path).replace(/^\/+/, "")}`)
+                    url: img.image_url
                 };
             });
         };
@@ -483,6 +507,7 @@ function getOrCreateClientId() {
 }
 
 async function loadUserPreferences() {
+    hasUserInteracted = true;
     try {
         const response = await fetch(window.appPath("/api/get_user_preferences"), {
             headers: {

@@ -1712,16 +1712,6 @@ INTERACTION_WEIGHTS = {
 def rank_discount(rank):
     return 1.0 / np.log2(rank + 2)
 
-def l2_normalise(feature_vector):
-    feature_vector = np.array(feature_vector, dtype=np.float64)
-    norm = np.linalg.norm(feature_vector)
-
-    # prevent validation errors
-    if norm == 0 or np.isnan(norm) or np.isinf(norm):
-        return np.zeros_like(feature_vector)
-    
-    return feature_vector/norm
-
 def compute_interaction_weight(interaction):
     """
     Compute weight from a single interaction record
@@ -1771,7 +1761,7 @@ def compute_interaction_weight(interaction):
 
     return weight
 
-def create_user_profile(interactions, features_file_path):
+def create_user_profile(interactions, image_matrix, id_to_idx):
     """
     interactions: list of dicts, each containing:
         {
@@ -1783,40 +1773,31 @@ def create_user_profile(interactions, features_file_path):
             "review": str,
             "favourite": bool,
             "not_interested": bool,
-            "save_to_gallery": bool,
-            "click_stream_count": int
+            "save_to_gallery": bool
         }
     """
-
-    weighted_sum = None
+    weighted_sum = np.zeros(image_matrix.shape[1])
     total_weight = 0.0
 
-    # Load feature embeddings for paintings the user interacted with
-    with h5py.File(features_file_path, "r") as f:
-        features = f["features"]  # shape: (N, d)
+    for interaction in interactions:
+        pid = interaction["painting_id"]
 
-        # Process user interaction
-        for interaction in interactions:
-            pid = interaction["painting_id"]
-            vector = features[pid]
+        if pid not in id_to_idx:
+            continue
 
-            weight = compute_interaction_weight(interaction)
+        idx = id_to_idx[pid]
+        vector = image_matrix[idx]
 
-            if weight == 0:
-                continue
+        weight = interaction["weight"]
 
-            if weighted_sum is None:
-                weighted_sum = np.zeros_like(vector)
+        weighted_sum += weight * vector
+        total_weight += abs(weight)
 
-            weighted_sum += weight * vector
-            total_weight += abs(weight)
-
-    # Final normalisation
-    if weighted_sum is None:
-        raise ValueError("No valid interactions available")
+    if total_weight == 0:
+        raise ValueError("No valid signal")
 
     user_profile = weighted_sum / total_weight
-    user_profile = l2_normalise(user_profile)
+    user_profile = user_profile / np.linalg.norm(user_profile)
 
     return user_profile
 
@@ -1914,6 +1895,125 @@ pca_vgg = pcaVGG.fit_transform(embeddings_vgg_norm)
 resnet_norm = pca_resnet / np.linalg.norm(pca_resnet, axis=1, keepdims=True)
 vgg_norm = pca_vgg / np.linalg.norm(pca_vgg, axis=1, keepdims=True)
 
+def retrieve_top_k_from_user(user_profile, embeddings, k=10):
+    scores = embeddings @ user_profile
+    top_k_idx = np.argsort(scores)[::-1][:k]
+    return top_k_idx, scores[top_k_idx]
+
+def get_seen_paintings(user_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT DISTINCT painting_id
+        FROM interaction_events
+        WHERE user_id = %s
+        AND event_type IN ('view_start', 'click', 'favourite', 'rating')
+    """, (user_id,))
+
+    seen = {row[0] for row in cur.fetchall()}
+
+    cur.close()
+    conn.close()
+    return seen
+
+@app.route("/api/recommend_resnet", methods=["POST"])
+def recommend_resnet():
+    data = request.json
+    user_id = data["user_id"]
+    session_id = data.get("session_id")
+
+    if not user_id or not session_id:
+        return jsonify({
+            "success": False,
+            "error": "Missing user_id or session_id"
+        }), 400
+
+    k = data.get("k", 10)
+
+    request_id = generate_request_id()
+    interactions = fetch_user_interactions(user_id)
+    for i in interactions:
+        i["weight"] = compute_interaction_weight(i)
+
+    user_profile = create_user_profile(interactions, embeddings_resnet, id_to_idx)
+    user_profile = pcaRESNET.transform(user_profile.reshape(1, -1)).flatten()
+    user_profile = user_profile / np.linalg.norm(user_profile)
+
+    top_k_idx, scores = retrieve_top_k_from_user(user_profile, resnet_norm, k)
+    print("painting IDs: ", top_k_idx)
+    print("scores: ", scores)
+
+    seen = get_seen_paintings(user_id)
+    results = []
+    db_rows = []
+
+    for rank, (idx, score) in enumerate(zip(top_k_idx, scores)):
+        painting_id = int(image_ids[idx])
+        if painting_id in seen:
+            continue
+
+        results.append({
+            "painting_id": painting_id,
+            "score": float(score)
+        })
+
+        db_rows.append((
+            session_id,
+            user_id,
+            painting_id,
+            request_id,
+            rank,
+            float(score),
+            datetime.utcnow()
+        ))
+
+    painting_ids = [r["painting_id"] for r in results]
+    db_paintings = fetch_paintings(painting_ids)
+    db_map = {p["painting_id"]: p for p in db_paintings}
+
+    final_results = []
+    for r in results:
+        pid = r["painting_id"]
+        meta = db_map.get(pid)
+
+        if not meta:
+            continue
+
+        final_results.append({
+            "painting_id": pid,
+            "score": r["score"],
+            "image_url": build_painting_url(meta["image_path"]),
+            "request_id": request_id
+        })
+
+    # Store recommendations in DB
+    # conn = get_db_connection()
+    # cur = conn.cursor()
+
+    # execute_values(cur, """
+    #     INSERT INTO recommendations (
+    #         session_id,
+    #         user_id,
+    #         painting_id,
+    #         request_id,
+    #         rank,
+    #         score,
+    #         created_at
+    #     )
+    #     VALUES %s
+    # """, db_rows)
+
+    # conn.commit()
+    # cur.close()
+    # conn.close()
+
+    return jsonify({
+        "user_id": user_id,
+        "request_id": request_id,
+        "recommendations": final_results
+    })
+
 def retrieve_top_k(query_path, model_name, model, embeddings, transform, k=10):
     # Load and preprocess query 
     img = preprocess_image(query_path)
@@ -1931,9 +2031,6 @@ def retrieve_top_k(query_path, model_name, model, embeddings, transform, k=10):
         query_embeddings = pcaRESNET.transform(query_embeddings.reshape(1, -1)).flatten()
         query_embeddings = query_embeddings / np.linalg.norm(query_embeddings)
         scores = embeddings @ query_embeddings
-    
-    # Late fusion 
-    #scores = alpha * sim_resnet + (1 - alpha) * sim_vgg
 
     # Top-k retreival 
     top_k_idx = np.argsort(scores)[::-1][:k]
@@ -2271,17 +2368,6 @@ def fetch_paintings(painting_ids):
     cur.execute("""
         SELECT 
             painting_id,
-            title,
-            year_created,
-            artist,
-            genre, 
-            art_style,
-            media,
-            description_tags,
-            nationality,
-            fields, 
-            art_movements,
-            bio,
             image_path
         FROM paintings_and_artists_metadata_bert
         WHERE painting_id = ANY(%s)
