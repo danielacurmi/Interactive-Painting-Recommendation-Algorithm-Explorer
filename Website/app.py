@@ -2350,19 +2350,20 @@ def recommend_sbert(query_structured, model, embedding_matrices, weights, painti
 # CLIP
 # Load CLIP Model and Processor
 model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32", use_safetensors=True).to(device)
+model.eval()
 processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
 
 image_tensors = joblib.load('data/image_tensors.pkl')
 text_tensors = joblib.load('data/text_tensors.pkl')
 
-image_matrix = np.array(image_tensors)  # (N, 512)
-text_matrix = np.array(text_tensors)    # (N, 512)
+image_matrix = np.array(image_tensors, dtype=np.float32)
+text_matrix = np.array(text_tensors, dtype=np.float32)
 
 image_matrix = image_matrix / np.linalg.norm(image_matrix, axis=1, keepdims=True)
 text_matrix = text_matrix / np.linalg.norm(text_matrix, axis=1, keepdims=True)
 
 def retrieve_by_text(query, top_k=10):
-    inputs = processor(text=query, return_tensors="pt", padding=True, truncation=True).to(device)
+    inputs = processor(text=[query], return_tensors="pt", padding=True, truncation=True).to(device)
 
     with torch.no_grad():
         q_emb = model.get_text_features(**inputs)
@@ -2392,19 +2393,39 @@ def retrieve_by_image(image, top_k=10):
     return top_k_idx, scores[top_k_idx]
 
 def hybrid_retrieve(query, alpha=0.6, top_k=10):
-    inputs = processor(text=query, return_tensors="pt", padding=True, truncation=True).to(device)
+    inputs = processor(
+        text=[query], 
+        return_tensors="pt",
+        padding=True,
+        truncation=True
+    ).to(device)
 
     with torch.no_grad():
-        text_emb = model.get_text_features(**inputs)
+        outputs = model(**inputs)
+
+        text_emb = outputs.text_embeds
+
+        if text_emb is None:
+            raise ValueError("CLIP forward pass failed: text_emb is None")
+
+        # normalize
         text_emb = text_emb / text_emb.norm(dim=-1, keepdim=True)
 
     text_emb = text_emb.cpu().numpy()
 
-    # cosine similarity
+    print("text_emb type:", type(text_emb))
+    print("text_emb shape:", getattr(text_emb, "shape", None))
+    print("text_emb ndim:", getattr(text_emb, "ndim", None))
+
+    # SAFETY CHECK
+    if text_emb is None or text_emb.shape[0] == 0:
+        raise ValueError("Invalid text embedding generated")
+
     text_scores = image_matrix @ text_emb.T
     text_side_scores = text_matrix @ text_emb.T
 
     final_scores = alpha * text_scores + (1 - alpha) * text_side_scores
+
     top_k_idx = np.argsort(final_scores[:, 0])[::-1][:top_k]
 
     return top_k_idx, final_scores[top_k_idx]
@@ -2430,13 +2451,14 @@ def fetch_paintings(painting_ids):
 
     return rows
 
-@app.route("/api/log_search_query", methods=["POST"])
-def log_search_query():
+@app.route("/api/search_clip", methods=["POST"])
+def search_clip():
     try:
         data = request.get_json()
 
         user_id = data.get("user_id")
         session_id = data.get("session_id")
+        request_id = data.get("request_id")
         query_text = data.get("query_text")
 
         if not user_id or not session_id or not query_text:
@@ -2455,14 +2477,62 @@ def log_search_query():
         """, (user_id, session_id, query_text))
 
         query_id = cur.fetchone()[0]
-        conn.commit()
+        top_k_idx, scores = retrieve_by_text(query_text, top_k=10)
 
+        painting_ids = top_k_idx.tolist()
+        scores = scores.flatten().tolist()
+        db_paintings = fetch_paintings(painting_ids)
+        db_map = {p["painting_id"]: p for p in db_paintings}
+
+        final_results = []
+        db_rows = []
+        for rank, (pid, score) in enumerate(zip(painting_ids, scores), start=1):
+            meta = db_map.get(pid)
+
+            if not meta:
+                continue
+
+            image_url = build_painting_url(meta["image_path"])
+
+            final_results.append({
+                "painting_id": pid,
+                "score": score,
+                "image_url": image_url,
+                "request_id": request_id
+            })
+
+            db_rows.append((
+                session_id,
+                user_id,
+                pid,
+                request_id,
+                rank,
+                float(score)
+            ))
+
+        if db_rows:
+            execute_values(cur, """
+                INSERT INTO recommendations (
+                    session_id,
+                    user_id,
+                    painting_id,
+                    request_id,
+                    rank,
+                    score
+                )
+                VALUES %s
+            """, db_rows)
+
+        conn.commit()
         cur.close()
         conn.close()
 
         return jsonify({
             "success": True,
-            "query_id": query_id
+            "user_id": user_id,
+            "request_id": request_id,
+            "query_id": query_id,
+            "recommendations": final_results
         })
 
     except Exception as e:

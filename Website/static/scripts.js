@@ -2,37 +2,13 @@ let isColdStartPhase = true;
 let userConcepts = [];
 const requestIdByPainting = {};
 let hasUserInteracted = false;
+let isSearchMode = false;
+let searchResultsBuffer = [];
 
 document.addEventListener("DOMContentLoaded", async () => {
     await checkUser();
     await loadUserPreferences();
     await initRecommendations();
-});
-
-document.getElementById("searchBar").addEventListener("keydown", async function (event) {
-    if (event.key === "Enter") {
-        const query = event.target.value.trim();
-
-        if (!query) return;
-
-        const payload = {
-            user_id: localStorage.getItem("user_id"),
-            session_id: localStorage.getItem("session_id"),
-            query_text: query
-        };
-
-        try {
-            await fetch(window.appPath(`/api/log_search_query`), {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify(payload)
-            });
-        } catch (err) {
-            console.error("Failed to log search query:", err);
-        }
-    }
 });
 
 function initRecommendations() {
@@ -52,6 +28,23 @@ function initRecommendations() {
             let images = [];
 
             try {
+                if (isSearchMode) {
+                    console.log("Using CLIP search results");
+                    images = searchResultsBuffer;
+                    if (images.length > 0) {
+                        currentRequestId = images[0].request_id;
+                    }
+                    searchResultsBuffer = [];
+                    return images.map(img => {
+                        const id = img.painting_id;
+                        requestIdByPainting[id] = img.request_id || currentRequestId;
+                        return {
+                            id: id,
+                            url: img.image_url
+                        };
+                    });
+                }
+                
                 const user_id = localStorage.getItem("user_id");
                 const session_id = localStorage.getItem("session_id");
 
@@ -310,6 +303,7 @@ function initRecommendations() {
             // Remove active from the layered buttons collection so only one shows active
             buttons.forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
+            clearSearch();
 
             const href = btn.dataset.href;
             if (href) {
@@ -629,3 +623,58 @@ window.onclick = function(event) {
         }
     }
 }
+
+// Handle search bar input and log queries
+async function handleSearchInput(event) {
+    if (event.key === "Enter") {
+        const query = event.target.value.trim();
+        if (!query) return;
+
+        try {
+            const response = await fetch(window.appPath(`/api/search_clip`), {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    user_id: parseInt(localStorage.getItem("user_id")),
+                    session_id: parseInt(localStorage.getItem("session_id")),
+                    request_id: crypto.randomUUID(),
+                    query_text: query,
+                    top_k: 20
+                })
+            });
+
+            const data = await response.json();
+
+            if (!data.success) throw new Error(data.error);
+            showToast("Search query was submitted successfully!");
+
+            // Activate search mode
+            isSearchMode = true;
+            searchResultsBuffer = data.recommendations;
+
+            const container = document.getElementById('container');
+            container.querySelectorAll('.col').forEach(col => col.innerHTML = "");
+
+            // Load results into grid using existing pipeline
+            loadImages();
+
+        } catch (err) {
+            console.error("Search failed:", err);
+            showToast("An error occurred while trying to search.");
+        }
+    }
+}
+
+function clearSearch() {
+    isSearchMode = false;
+    searchResultsBuffer = [];
+
+    const container = document.getElementById('container');
+    container.querySelectorAll('.col').forEach(col => col.innerHTML = "");
+
+    loadImages();
+}
+
+document.getElementById("searchBar").addEventListener("keydown", handleSearchInput);
