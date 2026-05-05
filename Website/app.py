@@ -2339,13 +2339,169 @@ def get_top_k(final_scores, query_index, k=30):
 painting_id_to_index = {
     pid: idx for idx, (_, pid) in enumerate(processed_data)
 }
-def recommend_sbert(query_structured, model, embedding_matrices, weights, painting_id_to_index, query_id, k=10):
+def recommend_sbert_query(query_structured, model, embedding_matrices, weights, painting_id_to_index, query_id, k=10):
     query_embeddings = encode_query_sbert(query_structured, model)
     similarities = compute_similarity_per_field_sbert(query_embeddings, embedding_matrices)
     final_scores = weighted_late_fusion(similarities, weights)
     query_index = painting_id_to_index[int(query_id)]
     top_indices, scores = get_top_k(final_scores, query_index, k)
     return top_indices, scores, similarities
+
+# 
+@app.route("/api/recommend_sbert", methods=["POST"])
+def recommend_sbert():
+    data = request.json
+    user_id = data["user_id"]
+    session_id = data.get("session_id")
+
+    if not user_id or not session_id:
+        return jsonify({
+            "success": False,
+            "error": "Missing user_id or session_id"
+        }), 400
+
+    k = data.get("k", 10)
+    request_id = generate_request_id()
+
+    interactions = fetch_user_interactions(user_id)
+    for i in interactions:
+        i["weight"] = compute_interaction_weight(i)
+
+    # -----------------------------
+    # BUILD USER PROFILE (PER FIELD)
+    # -----------------------------
+    user_profiles = {}
+    total_weights = {}
+
+    for field in embedding_matrices.keys():
+        user_profiles[field] = np.zeros(embedding_matrices[field].shape[1])
+        total_weights[field] = 0.0
+
+    for interaction in interactions:
+        pid = interaction["painting_id"]
+        w = interaction["weight"]
+
+        if abs(w) < 0.3:
+            continue
+
+        if pid not in painting_id_to_index:
+            continue
+
+        idx = painting_id_to_index[pid]
+
+        for field, matrix in embedding_matrices.items():
+            vec = matrix[idx]
+            user_profiles[field] += w * vec
+            total_weights[field] += abs(w)
+
+    # normalise per field
+    final_profile = []
+    for field in user_profiles:
+        if total_weights[field] > 0:
+            vec = user_profiles[field] / total_weights[field]
+            vec = vec / (np.linalg.norm(vec) + 1e-8)
+            final_profile.append(vec)
+
+    if len(final_profile) == 0:
+        return jsonify({
+            "success": False,
+            "error": "No strong interaction signal"
+        }), 200
+
+    user_profile = np.mean(final_profile, axis=0)
+    user_profile = user_profile / (np.linalg.norm(user_profile) + 1e-8)
+
+    # -----------------------------
+    # SCORE ALL PAINTINGS
+    # -----------------------------
+    scores = np.zeros(len(image_ids))
+
+    for field, matrix in embedding_matrices.items():
+        scores += matrix @ user_profile
+
+    scores = scores / len(embedding_matrices)
+
+    top_k_idx = np.argsort(scores)[::-1]
+
+    seen = get_seen_paintings(user_id)
+
+    results = []
+    db_rows = []
+    rank = 0
+
+    for idx in top_k_idx:
+        painting_id = int(image_ids[idx])
+        score = float(scores[idx])
+
+        if painting_id in seen:
+            continue
+
+        # if score < 0.05:
+        #     continue
+
+        results.append({
+            "painting_id": painting_id,
+            "score": score
+        })
+
+        db_rows.append((
+            session_id,
+            user_id,
+            painting_id,
+            request_id,
+            rank,
+            score,
+            datetime.utcnow()
+        ))
+
+        rank += 1
+        if rank >= k:
+            break
+
+    painting_ids = [r["painting_id"] for r in results]
+    db_paintings = fetch_paintings(painting_ids)
+    db_map = {p["painting_id"]: p for p in db_paintings}
+
+    final_results = []
+    for r in results:
+        pid = r["painting_id"]
+        meta = db_map.get(pid)
+
+        if not meta:
+            continue
+
+        final_results.append({
+            "painting_id": pid,
+            "score": r["score"],
+            "image_url": build_painting_url(meta["image_path"]),
+            "request_id": request_id
+        })
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    execute_values(cur, """
+        INSERT INTO recommendations_sbert (
+            session_id,
+            user_id,
+            painting_id,
+            request_id,
+            rank,
+            score,
+            created_at
+        )
+        VALUES %s
+    """, db_rows)
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    return jsonify({
+        "user_id": user_id,
+        "request_id": request_id,
+        "recommendations": final_results
+    })
 
 # CLIP
 # Load CLIP Model and Processor

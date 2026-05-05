@@ -4,6 +4,7 @@ const requestIdByPainting = {};
 let hasUserInteracted = false;
 let isSearchMode = false;
 let searchResultsBuffer = [];
+let useSbertMode = false;
 
 document.addEventListener("DOMContentLoaded", async () => {
     await checkUser();
@@ -77,6 +78,39 @@ function initRecommendations() {
                         isColdStartPhase = false; // switch to random after first batch
                     }
                 } 
+                // SBERT Recommendations
+                else if (useSbertMode) {
+                    console.log("Fetching recommendations using SBERT ...");
+
+                    const user_id = localStorage.getItem("user_id");
+                    const session_id = localStorage.getItem("session_id");
+
+                    const response = await fetch(window.appPath(`/api/recommend_sbert`), {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({
+                            user_id: parseInt(user_id),
+                            session_id: parseInt(session_id),
+                            k: 20
+                        })
+                    });
+
+
+                    const data = await response.json();
+
+                    if (data.recommendations) {
+                        images = data.recommendations;
+                        currentRequestId = data.request_id;
+                    } else {
+                        console.error("No SBERT recommendations returned");
+                        images = [];
+                    }
+
+                    console.log("SBERT response:", data);
+                    console.log("SBERT recommendations length:", data.recommendations?.length);
+                }
                 // ResNet-50 Recommendations
                 else {
                     if (!hasUserInteracted) {
@@ -291,6 +325,25 @@ function initRecommendations() {
                 closeModalHandler();
             }
         });
+
+        window.switchRecommendationMode = async function (mode) {
+            useSbertMode = false;
+            isColdStartPhase = false;
+
+            if (mode === "cold") {
+                isColdStartPhase = true;
+            }
+
+            if (mode === "sbert") {
+                useSbertMode = true;
+                isColdStartPhase = false;
+            }
+
+            const container = document.getElementById("container");
+            container.innerHTML = "";
+
+            await loadImages();
+        };
     }
     // Select both types of buttons and attach the same click behavior
     const buttons = Array.from(document.querySelectorAll('button.layered'));
@@ -303,7 +356,6 @@ function initRecommendations() {
             // Remove active from the layered buttons collection so only one shows active
             buttons.forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
-            clearSearch();
 
             const href = btn.dataset.href;
             if (href) {
@@ -623,6 +675,14 @@ window.onclick = function(event) {
         }
     }
 }
+
+document.getElementById("exploreBtn").addEventListener("click", () => {
+    window.switchRecommendationMode("sbert");
+});
+
+document.getElementById("homeBtn").addEventListener("click", () => {
+    window.switchRecommendationMode("cold")
+});
 
 // Handle search bar input and log queries
 async function handleSearchInput(event) {
