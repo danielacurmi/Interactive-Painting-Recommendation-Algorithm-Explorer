@@ -1,10 +1,11 @@
-let isColdStartPhase = true;
+//let isColdStartPhase = true;
 let userConcepts = [];
 const requestIdByPainting = {};
 let hasUserInteracted = false;
 let isSearchMode = false;
 let searchResultsBuffer = [];
-let useSbertMode = false;
+//let useSbertMode = false;
+let recommendationPhase = "cold"; 
 
 document.addEventListener("DOMContentLoaded", async () => {
     await checkUser();
@@ -55,18 +56,16 @@ function initRecommendations() {
                 }
 
                 // Initial set of recommendations
-                if (isColdStartPhase) {
+                if (recommendationPhase === "cold") {
                     console.log("Fetching cold start images...");
 
                     const response = await fetch(window.appPath(`/api/cold-start-images`), {
                         method: "POST",
-                        headers: {
-                            "Content-Type": "application/json"
-                        },
+                        headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
                             concepts: userConcepts,
-                            user_id: parseInt(localStorage.getItem("user_id")),
-                            session_id: parseInt(localStorage.getItem("session_id"))
+                            user_id: parseInt(user_id),
+                            session_id: parseInt(session_id)
                         })
                     });
 
@@ -75,21 +74,15 @@ function initRecommendations() {
                     if (data.success && data.paintings) {
                         images = data.paintings;
                         currentRequestId = data.request_id;
-                        isColdStartPhase = false; // switch to random after first batch
+                        recommendationPhase = "sbert";
                     }
-                } 
-                // SBERT Recommendations
-                else if (useSbertMode) {
+                }
+                else if (recommendationPhase === "sbert") {
                     console.log("Fetching recommendations using SBERT ...");
-
-                    const user_id = localStorage.getItem("user_id");
-                    const session_id = localStorage.getItem("session_id");
 
                     const response = await fetch(window.appPath(`/api/recommend_sbert`), {
                         method: "POST",
-                        headers: {
-                            "Content-Type": "application/json"
-                        },
+                        headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
                             user_id: parseInt(user_id),
                             session_id: parseInt(session_id),
@@ -97,19 +90,14 @@ function initRecommendations() {
                         })
                     });
 
-
                     const data = await response.json();
 
                     if (data.recommendations) {
                         images = data.recommendations;
                         currentRequestId = data.request_id;
                     } else {
-                        console.error("No SBERT recommendations returned");
                         images = [];
                     }
-
-                    console.log("SBERT response:", data);
-                    console.log("SBERT recommendations length:", data.recommendations?.length);
                 }
                 // ResNet-50 Recommendations
                 else {
@@ -327,16 +315,13 @@ function initRecommendations() {
         });
 
         window.switchRecommendationMode = async function (mode) {
-            useSbertMode = false;
-            isColdStartPhase = false;
-
             if (mode === "cold") {
-                isColdStartPhase = true;
+                recommendationPhase = "cold";
             }
 
             if (mode === "sbert") {
-                useSbertMode = true;
-                isColdStartPhase = false;
+                // IMPORTANT: start from cold, not directly SBERT
+                recommendationPhase = "cold";
             }
 
             const container = document.getElementById("container");

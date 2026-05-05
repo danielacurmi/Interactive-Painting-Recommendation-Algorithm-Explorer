@@ -25,7 +25,7 @@
 
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='loader_4.css') }}">
-    <script src="{{ url_for('static', filename='scripts.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='explore_script.js') }}" defer></script>
     <script src="{{ url_for('static', filename='user_interaction.js') }}" defer></script>
     
     <title>Painting Recommendation System</title>
@@ -43,7 +43,7 @@
                     <span class="btn-text">Home</span>
                 </span>
             </button>
-            <button class="layered" id="exploreBtn" data-href="{{ url_for('explore') }}">
+            <button class="layered" id="exploreBtn" data-href="{{ url_for('explore') }}>
                 <span class="btn-inner">
                     <span class="btn-text">Explore</span>
                 </span>
