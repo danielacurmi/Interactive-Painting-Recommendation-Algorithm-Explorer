@@ -1,10 +1,11 @@
 let isColdStartPhase = true;
+let isSearchMode = false;
+let useSbertMode = false;
+
+let searchResultsBuffer = [];
 let userConcepts = [];
 const requestIdByPainting = {};
 let hasUserInteracted = false;
-let isSearchMode = false;
-let searchResultsBuffer = [];
-let useSbertMode = false;
 
 document.addEventListener("DOMContentLoaded", async () => {
     await checkUser();
@@ -247,7 +248,7 @@ function initRecommendations() {
                     });
 
                     setField(title, data.title);
-                    setField(artist, data.artist?.name_surname);
+                    setField(artist, data.artist?.artist);
 
                     setField(
                         artistBirth,
@@ -288,7 +289,7 @@ function initRecommendations() {
             col.appendChild(card);
         };
 
-        const loadImages = async () => {
+        window.loadImages = async () => {
             const images = await fetchImageData();
             if (images.length > 0) {
                 images.forEach((imgData, index) => {
@@ -303,11 +304,11 @@ function initRecommendations() {
             const windowHeight = window.innerHeight;
             const bodyHeight = document.documentElement.scrollHeight;
             if (bodyHeight - scrollTop - windowHeight < 800) {
-                loadImages();
+                window.loadImages();
             }
         };
 
-        loadImages(); 
+        window.loadImages(); 
         window.addEventListener('scroll', handleScroll);
 
         // Close modal
@@ -342,8 +343,10 @@ function initRecommendations() {
             const container = document.getElementById("container");
             container.innerHTML = "";
 
-            await loadImages();
+            await window.loadImages();
         };
+
+        document.getElementById("searchBar").addEventListener("keydown", handleSearchInput);
     }
     // Select both types of buttons and attach the same click behavior
     const buttons = Array.from(document.querySelectorAll('button.layered'));
@@ -718,7 +721,7 @@ async function handleSearchInput(event) {
             container.querySelectorAll('.col').forEach(col => col.innerHTML = "");
 
             // Load results into grid using existing pipeline
-            loadImages();
+            window.loadImages();
 
         } catch (err) {
             console.error("Search failed:", err);
@@ -734,7 +737,6 @@ function clearSearch() {
     const container = document.getElementById('container');
     container.querySelectorAll('.col').forEach(col => col.innerHTML = "");
 
-    loadImages();
+    window.loadImages();
 }
 
-document.getElementById("searchBar").addEventListener("keydown", handleSearchInput);

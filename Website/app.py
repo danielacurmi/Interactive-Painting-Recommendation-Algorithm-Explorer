@@ -731,26 +731,24 @@ def get_painting(painting_id):
 
     cur.execute("""
         SELECT
-            p.painting_id,
-            p.title,
-            p.year_created,
-            p.genre,
-            p.art_style,
-            p.media,
-            p.description_tags,
-            p.image_path,
+            painting_id,
+            title,
+            year_created,
+            genre,
+            art_style,
+            media,
+            description_tags,
+            image_path,
+            artist,
+            birth_year,
+            death_year,
+            nationality,
+            fields,
+            art_movements,
+            bio
 
-            a.name_surname,
-            a.birth_year,
-            a.death_year,
-            a.nationality,
-            a.fields,
-            a.art_movements,
-            a.bio
-
-        FROM paintings p
-        JOIN artists a ON p.artist_id = a.artist_id
-        WHERE p.painting_id = %s;
+        FROM paintings_and_artists_metadata_bert 
+        WHERE painting_id = %s;
     """, (painting_id,))
 
     row = cur.fetchone()
@@ -783,7 +781,7 @@ def get_painting(painting_id):
         "image_path": row["image_path"],
 
         "artist": {
-            "name_surname": row["name_surname"],
+            "artist": row["artist"],
             "birth_year": row["birth_year"],
             "death_year": row["death_year"],
             "nationality": row["nationality"],
@@ -2554,7 +2552,7 @@ def search_clip():
         """, (user_id, session_id, query_text))
 
         query_id = cur.fetchone()[0]
-        top_k_idx, scores = retrieve_by_text(query_text, top_k=10)
+        top_k_idx, scores = hybrid_retrieve(query_text, top_k=50)
 
         painting_ids = top_k_idx.tolist()
         scores = scores.flatten().tolist()
@@ -2588,7 +2586,7 @@ def search_clip():
 
         if db_rows:
             execute_values(cur, """
-                INSERT INTO recommendations (
+                INSERT INTO recommendations_clip (
                     session_id,
                     user_id,
                     painting_id,
