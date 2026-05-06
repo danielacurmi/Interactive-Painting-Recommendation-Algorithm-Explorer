@@ -1,11 +1,9 @@
-//let isColdStartPhase = true;
+let isColdStartPhase = true;
 let userConcepts = [];
 const requestIdByPainting = {};
 let hasUserInteracted = false;
 let isSearchMode = false;
 let searchResultsBuffer = [];
-//let useSbertMode = false;
-let recommendationPhase = "cold"; 
 
 document.addEventListener("DOMContentLoaded", async () => {
     await checkUser();
@@ -30,22 +28,22 @@ function initRecommendations() {
             let images = [];
 
             try {
-                // if (isSearchMode) {
-                //     console.log("Using CLIP search results");
-                //     images = searchResultsBuffer;
-                //     if (images.length > 0) {
-                //         currentRequestId = images[0].request_id;
-                //     }
-                //     searchResultsBuffer = [];
-                //     return images.map(img => {
-                //         const id = img.painting_id;
-                //         requestIdByPainting[id] = img.request_id || currentRequestId;
-                //         return {
-                //             id: id,
-                //             url: img.image_url
-                //         };
-                //     });
-                // }
+                if (isSearchMode) {
+                    console.log("Using CLIP search results");
+                    images = searchResultsBuffer;
+                    if (images.length > 0) {
+                        currentRequestId = images[0].request_id;
+                    }
+                    searchResultsBuffer = [];
+                    return images.map(img => {
+                        const id = img.painting_id;
+                        requestIdByPainting[id] = img.request_id || currentRequestId;
+                        return {
+                            id: id,
+                            url: img.image_url
+                        };
+                    });
+                }
                 
                 const user_id = localStorage.getItem("user_id");
                 const session_id = localStorage.getItem("session_id");
@@ -56,16 +54,18 @@ function initRecommendations() {
                 }
 
                 // Initial set of recommendations
-                if (recommendationPhase === "cold") {
+                if (isColdStartPhase) {
                     console.log("Fetching cold start images...");
 
                     const response = await fetch(window.appPath(`/api/cold-start-images`), {
                         method: "POST",
-                        headers: { "Content-Type": "application/json" },
+                        headers: {
+                            "Content-Type": "application/json"
+                        },
                         body: JSON.stringify({
                             concepts: userConcepts,
-                            user_id: parseInt(user_id),
-                            session_id: parseInt(session_id)
+                            user_id: parseInt(localStorage.getItem("user_id")),
+                            session_id: parseInt(localStorage.getItem("session_id"))
                         })
                     });
 
@@ -74,10 +74,10 @@ function initRecommendations() {
                     if (data.success && data.paintings) {
                         images = data.paintings;
                         currentRequestId = data.request_id;
-                        recommendationPhase = "sbert";
+                        isColdStartPhase = false; // switch to recommendations after first batch
                     }
-                }
-                else if (recommendationPhase === "sbert") {
+                } 
+                else {
                     console.log("Fetching recommendations using SBERT ...");
 
                     const response = await fetch(window.appPath(`/api/recommend_sbert`), {
@@ -96,39 +96,6 @@ function initRecommendations() {
                         images = data.recommendations;
                         currentRequestId = data.request_id;
                     } else {
-                        images = [];
-                    }
-                }
-                // ResNet-50 Recommendations
-                else {
-                    if (!hasUserInteracted) {
-                        console.log("Skipping recommender - no interactions yet");
-                        return [];
-                    }
-                    console.log("Fetching recommendations using ResNet-50 ...");
-
-                    const user_id = localStorage.getItem("user_id");
-                    const session_id = localStorage.getItem("session_id");
-
-                    const response = await fetch(window.appPath(`/api/recommend_resnet`), {
-                        method: "POST",
-                        headers: {
-                            "Content-Type": "application/json"
-                        },
-                        body: JSON.stringify({
-                            user_id: parseInt(user_id),
-                            session_id: parseInt(session_id),
-                            k: 20
-                        })
-                    });
-
-                    const data = await response.json();
-
-                    if (data.recommendations) {
-                        images = data.recommendations;
-                        currentRequestId = data.request_id;
-                    } else {
-                        console.error("No recommendations returned");
                         images = [];
                     }
                 }
@@ -276,7 +243,7 @@ function initRecommendations() {
             col.appendChild(card);
         };
 
-        const loadImages = async () => {
+        window.loadImages = async () => {
             const images = await fetchImageData();
             if (images.length > 0) {
                 images.forEach((imgData, index) => {
@@ -291,11 +258,11 @@ function initRecommendations() {
             const windowHeight = window.innerHeight;
             const bodyHeight = document.documentElement.scrollHeight;
             if (bodyHeight - scrollTop - windowHeight < 800) {
-                loadImages();
+                window.loadImages();
             }
         };
 
-        loadImages(); 
+        window.loadImages(); 
         window.addEventListener('scroll', handleScroll);
 
         // Close modal
@@ -314,21 +281,7 @@ function initRecommendations() {
             }
         });
 
-        window.switchRecommendationMode = async function (mode) {
-            if (mode === "cold") {
-                recommendationPhase = "cold";
-            }
-
-            if (mode === "sbert") {
-                // IMPORTANT: start from cold, not directly SBERT
-                recommendationPhase = "cold";
-            }
-
-            const container = document.getElementById("container");
-            container.innerHTML = "";
-
-            await loadImages();
-        };
+        document.getElementById("searchBar").addEventListener("keydown", handleSearchInput);
     }
     // Select both types of buttons and attach the same click behavior
     const buttons = Array.from(document.querySelectorAll('button.layered'));
@@ -661,14 +614,6 @@ window.onclick = function(event) {
     }
 }
 
-document.getElementById("exploreBtn").addEventListener("click", () => {
-    window.switchRecommendationMode("sbert");
-});
-
-document.getElementById("homeBtn").addEventListener("click", () => {
-    window.switchRecommendationMode("cold")
-});
-
 // Handle search bar input and log queries
 async function handleSearchInput(event) {
     if (event.key === "Enter") {
@@ -703,13 +648,14 @@ async function handleSearchInput(event) {
             container.querySelectorAll('.col').forEach(col => col.innerHTML = "");
 
             // Load results into grid using existing pipeline
-            loadImages();
+            window.loadImages();
 
         } catch (err) {
             console.error("Search failed:", err);
             showToast("An error occurred while trying to search.");
         }
     }
+    clearSearch()
 }
 
 function clearSearch() {
@@ -719,7 +665,6 @@ function clearSearch() {
     const container = document.getElementById('container');
     container.querySelectorAll('.col').forEach(col => col.innerHTML = "");
 
-    loadImages();
+    window.loadImages();
 }
 
-document.getElementById("searchBar").addEventListener("keydown", handleSearchInput);
