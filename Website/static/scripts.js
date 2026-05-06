@@ -29,22 +29,22 @@ function initRecommendations() {
             let images = [];
 
             try {
-                // if (isSearchMode) {
-                //     console.log("Using CLIP search results");
-                //     images = searchResultsBuffer;
-                //     if (images.length > 0) {
-                //         currentRequestId = images[0].request_id;
-                //     }
-                //     searchResultsBuffer = [];
-                //     return images.map(img => {
-                //         const id = img.painting_id;
-                //         requestIdByPainting[id] = img.request_id || currentRequestId;
-                //         return {
-                //             id: id,
-                //             url: img.image_url
-                //         };
-                //     });
-                // }
+                if (isSearchMode) {
+                    console.log("Using CLIP search results");
+                    images = searchResultsBuffer;
+                    if (images.length > 0) {
+                        currentRequestId = images[0].request_id;
+                    }
+                    searchResultsBuffer = [];
+                    return images.map(img => {
+                        const id = img.painting_id;
+                        requestIdByPainting[id] = img.request_id || currentRequestId;
+                        return {
+                            id: id,
+                            url: img.image_url
+                        };
+                    });
+                }
                 
                 const user_id = localStorage.getItem("user_id");
                 const session_id = localStorage.getItem("session_id");
@@ -130,7 +130,7 @@ function initRecommendations() {
                         body: JSON.stringify({
                             user_id: parseInt(user_id),
                             session_id: parseInt(session_id),
-                            k: 20
+                            k: 30
                         })
                     });
 

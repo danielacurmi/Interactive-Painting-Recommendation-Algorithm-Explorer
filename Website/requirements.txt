@@ -6,14 +6,14 @@ PyWavelets
 matplotlib
 scikit-learn
 scikit-image
-torch
-torchvision
 Pillow
 psycopg2-binary
 joblib
 h5py
-transformers
 grad-cam
 wordninja
 sentence_transformers
 uuid
+torch==2.5.1
+torchvision==0.20.1
+transformers==4.38.2

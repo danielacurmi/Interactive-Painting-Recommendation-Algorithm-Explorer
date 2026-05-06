@@ -978,10 +978,10 @@ def extract_visual_features(image_rgb):
     return palette, palette_type
 
 # Neural Style Transfer
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cpu")
 print(device)
 
-image_size = 512 if torch.cuda.is_available() else 256
+image_size = 512 if device.type == "cuda" else 256
 print(image_size)
 
 normalization_mean = [0.485, 0.456, 0.406]
@@ -1017,9 +1017,11 @@ def gram_matrix(tensor):
     return G / (2 * c * h * w)
 
 # Load VGG19 model with pre-trained weights
-vgg = models.vgg19(weights=VGG19_Weights.DEFAULT).features.to(device).eval()
-for param in vgg.parameters():
-    param.requires_grad = False
+def load_vgg():
+    vgg = models.vgg19(weights=VGG19_Weights.DEFAULT).features.to(device).eval()
+    for param in vgg.parameters():
+        param.requires_grad = False
+    return vgg
 
 #content_layer = ['conv4_2']
 #style_layers = ['conv_1', 'conv_2', 'conv_3', 'conv_4', 'conv_5']
@@ -1027,7 +1029,7 @@ for param in vgg.parameters():
 content_layer = '21'
 style_layers = ['0', '5', '10', '19', '28']
 
-def get_content_feature(image):
+def get_content_feature(image, vgg):
     x = image
     for i, layer in enumerate(vgg):
         x = layer(x)
@@ -1057,68 +1059,79 @@ def compute_style_loss(generated_features, style_features):
 def run_style_transfer(content_img_path, style_img_path, output_path, num_steps=300,
                     init_from_content=True,
                     show_progress=True):
+    
+    # Load VGG19 model
+    vgg = load_vgg()
 
-    # Load images
-    content_img = load_image(content_img_path)
-    style_img = load_image(style_img_path)
+    try:
+        # Load images
+        content_img = load_image(content_img_path)
+        style_img = load_image(style_img_path)
 
-    # Extract Content and Style features from both images, respectively
-    style_features = get_style_features(style_img, vgg, style_layers)
-    content_features = get_content_feature(content_img)
+        # Extract Content and Style features from both images, respectively
+        style_features = get_style_features(style_img, vgg, style_layers)
+        content_features = get_content_feature(content_img, vgg)
 
-    # Initialize generated image
-    if init_from_content:
-        generated_img = content_img.clone().to(device).requires_grad_(True)
-    else:
-        generated_img = torch.randn((1, 3, 512, 512), device=device, requires_grad=True)
+        # Initialize generated image
+        if init_from_content:
+            generated_img = content_img.clone().to(device).requires_grad_(True)
+        else:
+            generated_img = torch.randn((1, 3, 512, 512), device=device, requires_grad=True)
 
-    optimizer = optim.LBFGS([generated_img])
+        optimizer = optim.LBFGS([generated_img])
 
-    # Loss tracking for graph plot
-    losses = {"total": [], "content": [], "style": []}
-    current_losses = {"total": None, "content": None, "style": None}
+        # Loss tracking for graph plot
+        losses = {"total": [], "content": [], "style": []}
+        current_losses = {"total": None, "content": None, "style": None}
 
-    def closure():
-        optimizer.zero_grad()
+        def closure():
+            optimizer.zero_grad()
 
-        # Forward Pass
-        gen_content = get_content_feature(generated_img)
-        gen_style = get_style_features(generated_img, vgg, style_layers)
+            # Forward Pass
+            gen_content = get_content_feature(generated_img, vgg)
+            gen_style = get_style_features(generated_img, vgg, style_layers)
 
-        # Compute style and content loss
-        c_loss = compute_content_loss(gen_content, content_features)
-        s_loss = compute_style_loss(gen_style, style_features)
-        s_loss = (1e9*s_loss)
+            # Compute style and content loss
+            c_loss = compute_content_loss(gen_content, content_features)
+            s_loss = compute_style_loss(gen_style, style_features)
+            s_loss = (1e9*s_loss)
 
-        total_loss = c_loss + s_loss
-        total_loss.backward()
+            total_loss = c_loss + s_loss
+            total_loss.backward()
 
-        current_losses["total"] = total_loss.item()
-        current_losses["content"] = c_loss.item()
-        current_losses["style"] = s_loss.item()
+            current_losses["total"] = total_loss.item()
+            current_losses["content"] = c_loss.item()
+            current_losses["style"] = s_loss.item()
 
-        return total_loss
+            return total_loss
 
-    for step in range(num_steps):
-        optimizer.step(closure)
+        for step in range(num_steps):
+            optimizer.step(closure)
 
-        losses["total"].append(current_losses["total"])
-        losses["content"].append(current_losses["content"])
-        losses["style"].append(current_losses["style"])
+            losses["total"].append(current_losses["total"])
+            losses["content"].append(current_losses["content"])
+            losses["style"].append(current_losses["style"])
 
-        if show_progress:
-            print(f"Step {step}, Total Loss: {current_losses['total']:.4f}, "
-            f"Content Loss: {current_losses['content']:.4f}, "
-            f"Style Loss: {current_losses['style']:.4f}")
+            if show_progress:
+                print(f"Step {step}, Total Loss: {current_losses['total']:.4f}, "
+                f"Content Loss: {current_losses['content']:.4f}, "
+                f"Style Loss: {current_losses['style']:.4f}")
 
-    # Save output
-    with torch.no_grad():
-        final_img = generated_img.detach().clone()
+        # Save output
+        with torch.no_grad():
+            final_img = generated_img.detach().clone()
 
-    save_image(final_img, output_path)
-    print(f"Saved stylised image to {output_path}")
+        save_image(final_img, output_path)
+        print(f"Saved stylised image to {output_path}")
 
-    return output_path
+        return output_path
+
+    # Unload model after use
+    finally:
+        del vgg
+        torch.cuda.empty_cache()
+        import gc
+        gc.collect()
 
 # Cold-Start Mitigation Strategy
 # Concept structure i.e. what each box will contain
@@ -1785,42 +1798,12 @@ def preprocess_image(image_path):
     except:
         return None
 
-model_resnet = models.resnet50(pretrained=True)
+# model_resnet = models.resnet50(pretrained=True)
 
-# Remove final classification layer (fc)
-model_resnet = torch.nn.Sequential(*list(model_resnet.children())[:-1])
-model_resnet.to(device)
-model_resnet.eval()
-
-class VGG19FeatureExtractor(nn.Module):
-    def __init__(self):
-        super().__init__()
-        vgg = models.vgg19(weights=models.VGG19_Weights.IMAGENET1K_V1)
-        self.features = vgg.features
-
-        # Freeze
-        for param in self.features.parameters():
-            param.requires_grad = False
-
-        # Layers to extract from
-        self.selected_layers = [17, 26, 35]
-        self.pool = nn.AdaptiveAvgPool2d((1, 1))
-
-    def forward(self, x):
-        outputs = []
-
-        for i, layer in enumerate(self.features):
-            x = layer(x)
-            if i in self.selected_layers:
-                pooled = self.pool(x)
-                pooled = pooled.view(pooled.size(0), -1)  # flatten
-                outputs.append(pooled)
-
-        # Concatenate multi-level features
-        return torch.cat(outputs, dim=1)
-
-model_vgg = VGG19FeatureExtractor().to(device)
-model_vgg.eval()
+# # Remove final classification layer (fc)
+# model_resnet = torch.nn.Sequential(*list(model_resnet.children())[:-1])
+# model_resnet.to(device)
+# model_resnet.eval()
 
 def extract_resnet_features(model, img_tensor):
     img_tensor = img_tensor.unsqueeze(0).to(device)
@@ -1832,33 +1815,15 @@ def extract_resnet_features(model, img_tensor):
 
     return features.cpu().numpy().flatten()
 
-def extract_vgg_19_features(model, img_tensor):
-    img_tensor = img_tensor.unsqueeze(0).to(device)
-
-    with torch.no_grad():
-        features = model(img_tensor) # (1, 1280)
-
-    return features.cpu().numpy().flatten()
-
 # Load embeddings
 data = joblib.load('data/resnet50_embeddings.pkl')
 embeddings_resnet = data['embeddings']
 image_ids_resnet = data['image_ids']
-
-data = joblib.load('data/VGG19_embeddings.pkl')
-embeddings_vgg = data['embeddings']
-image_ids_vgg = data['image_ids']
-
 embeddings_resnet_norm = embeddings_resnet / np.linalg.norm(embeddings_resnet, axis=1, keepdims=True)
-embeddings_vgg_norm = embeddings_vgg / np.linalg.norm(embeddings_vgg, axis=1, keepdims=True)
 
-pcaRESNET = PCA(n_components=512) # or 128, 512 depending on tradeoff
-pcaVGG = PCA(n_components=256)
+pcaRESNET = PCA(n_components=512) 
 pca_resnet = pcaRESNET.fit_transform(embeddings_resnet_norm)
-pca_vgg = pcaVGG.fit_transform(embeddings_vgg_norm)
-
 resnet_norm = pca_resnet / np.linalg.norm(pca_resnet, axis=1, keepdims=True)
-vgg_norm = pca_vgg / np.linalg.norm(pca_vgg, axis=1, keepdims=True)
 
 NUM_CLUSTERS = 20 
 kmeans = KMeans(n_clusters=NUM_CLUSTERS, random_state=42, n_init=10)
@@ -2068,451 +2033,421 @@ def recommend_resnet():
         "recommendations": final_results
     })
 
-def retrieve_top_k(query_path, model_name, model, embeddings, transform, k=10):
-    # Load and preprocess query
-    img = preprocess_image(query_path)
-
-    # Extract features, L2 Norm, Apply PCA, L2 Norm again, Cosine similarity
-    if(model_name == 'model_vgg'):
-        query_embeddings = extract_vgg_19_features(model, img)
-        query_embeddings = query_embeddings / np.linalg.norm(query_embeddings)
-        query_embeddings = pcaVGG.transform(query_embeddings.reshape(1, -1)).flatten()
-        query_embeddings = query_embeddings / np.linalg.norm(query_embeddings)
-        scores = embeddings @ query_embeddings
-    elif(model_name == 'model_resnet'):
-        query_embeddings = extract_resnet_features(model, img)
-        query_embeddings = query_embeddings / np.linalg.norm(query_embeddings)
-        query_embeddings = pcaRESNET.transform(query_embeddings.reshape(1, -1)).flatten()
-        query_embeddings = query_embeddings / np.linalg.norm(query_embeddings)
-        scores = embeddings @ query_embeddings
-
-    # Top-k retreival
-    top_k_idx = np.argsort(scores)[::-1][:k]
-
-    return top_k_idx, scores[top_k_idx]
-
 # SBERT
 # Title preprocessing i.e. NULL/missing handling and text normalisation
-ROMAN_NUMERAL_PATTERN = re.compile(r'\b(i{1,3}|iv|v|vi{0,3}|ix|x)\b', re.IGNORECASE)
-
-def normalize_roman_numerals(text: str) -> str:
-    return ROMAN_NUMERAL_PATTERN.sub(lambda m: m.group(0).upper(), text)
+# ROMAN_NUMERAL_PATTERN = re.compile(r'\b(i{1,3}|iv|v|vi{0,3}|ix|x)\b', re.IGNORECASE)
+
+# def normalize_roman_numerals(text: str) -> str:
+#     return ROMAN_NUMERAL_PATTERN.sub(lambda m: m.group(0).upper(), text)
 
-def process_title(title: str) -> str:
-    # Handle NULL/missing values
-    if title is None or title.strip() == "":
-        return "unknown title"
+# def process_title(title: str) -> str:
+#     # Handle NULL/missing values
+#     if title is None or title.strip() == "":
+#         return "unknown title"
 
-    # Normalise whitespace
-    title = title.strip()
-    title = re.sub(r'\s+', ' ', title)
-
-    # Fix broken apostrophes e.g. "Martin S" → "Martin's" and normalise roman numerals
-    title = re.sub(r"\b([A-Za-z]+)\s+S\b", r"\1's", title)
-    title = normalize_roman_numerals(title)
-
-    # Remove trailing index numbers only when safe
-    if re.search(r'(untitled|drawing|study|composition|abstraction)', title, re.IGNORECASE):
-        title = re.sub(r'\s*\(?\d+\)?$', '', title)
-
-    title = re.sub(r'\s+', ' ', title).strip()
-
-    return title
-
-# Used to avoid cutting mid-word
-def safe_cut(text, length):
-    cut = text[:length]
-    return cut[:cut.rfind(" ")] if " " in cut else cut
-
-# Bio preprocessing, including character cutoff since bio fields contain the most
-# characters and heavily bias the embedding space if left untrimmed
-def process_bio(bio: str, max_chars=2000) -> str:
-    if bio is None or bio.strip() == "":
-        return "no biography available"
-
-    # Normalise whitespace, including newlines and tabs
-    bio = bio.strip()
-    bio = re.sub(r'\s+', ' ', bio)
-
-    # Truncate so that bio is token-safe for SBERT
-    if len(bio) > max_chars:
-        head_len = int(max_chars * 0.6)
-        tail_len = max_chars - head_len
-
-        head = safe_cut(bio, head_len)
-        tail = safe_cut(bio[::-1], tail_len)[::-1]
-
-        bio = f"{head} ... {tail}"
-
-    return bio
-
-# This method can be used for all categorical fields, to handle NULL/missing values, convert all fields to lowercase apart
-# from artist and remove excess whitespace
-def process_categorical_field(field_value: str, field_name: str = None) -> str:
-    # Handle NULL/missing values
-    if field_value is None or field_value.strip() == "":
-        return f"unknown {field_name}"
-
-    field_value = field_value.strip()
-
-    # Normalise whitespace and convert all categoricals to lowercase except artist since it harms entity recognition
-    field_value = re.sub(r'\s+', ' ', field_value)
-    if field_name != "artist":
-        field_value = field_value.lower()
-
-    return field_value
-
-# This method can be used for all multi-value fields, it handles nulls/missing values,
-# converts all comma seperated items to lower case, and applies the respective preprocessing for description_tags,
-# joining all value segments using |
-def process_multi_value_field(feild_value: str, field_name: str = None) -> str:
-    # Handle NULL/missing values
-    if feild_value is None or feild_value.strip() == "":
-        return f"unknown {field_name}"
-
-    # Split on comma
-    items = feild_value.split(",")
-    cleaned = []
-    for item in items:
-        item = item.strip().lower()
-        if item == "":
-            continue
-
-        # Replace hyphens with space when in-between words only and normalise internal whitespace
-        if field_name == "description tags":
-            item = re.sub(r'(?<=\w)-(?=\w)', ' ', item)
-
-            # Apply segmentation only if; no spaces already, long enough, purely alphabetic
-            if " " not in item and len(item) > 10 and item.isalpha():
-                split_words = wordninja.split(item)
-
-                # Safety checks to avoid bad splits (e.g. single char fragments)
-                if (len(split_words) > 1 and all(len(w) > 2 for w in split_words) and len(" ".join(split_words)) >= len(item) * 0.8):
-                    item = " ".join(split_words)
-
-        item = re.sub(r'\s+', ' ', item)
-        cleaned.append(item)
-
-    if not cleaned:
-        return f"unknown {field_name}"
-
-    # Deduplicate while preserving order
-    unique_items = list(dict.fromkeys(cleaned))
-
-    return " | ".join(unique_items)
-
-# Instead of using years, encode them as semantic
-def process_year(year_created):
-    # NULL/missing
-    if year_created is None or str(year_created).strip() == "":
-        return "unknown period"
-
-    try:
-        year = int(year_created)
-    except (ValueError, TypeError):
-        return "unknown period"
-
-    # Period mapping
-    if year < 1400:
-        return "medieval period 14th century"
-    elif year < 1600:
-        return "renaissance period 16th century"
-    elif year < 1700:
-        return "baroque period 17th century"
-    elif year < 1800:
-        return "rococo enlightenment period 18th century"
-    elif year <= 1850:
-        return "early modern period 18th century"
-    elif year <= 1900:
-        return "late 19th century impressionism era"
-    elif year <= 1945:
-        return "early 20th century modernism"
-    elif year <= 1970:
-        return "mid 20th century post war modern"
-    elif year <= 2000:
-        return "late 20th century contemporary"
-    else:
-        return "contemporary period 20th century"
-
-def format_text_fields(title, year_created, genre, art_style, media, description_tags, artist, nationality, fields, art_movements, bio):
-    title_processed = process_title(title)
-    year_processed = process_year(year_created)
-    genre_processed = process_categorical_field(genre, "genre")
-    art_style_processed = process_categorical_field(art_style, "art style")
-    media_processed = process_multi_value_field(media, "media")
-    description_tags_processed = process_multi_value_field(description_tags, "description tags")
-    artist_processed = process_categorical_field(artist, "artist")
-    nationality_processed = process_categorical_field(nationality, "nationality")
-    fields_processed = process_multi_value_field(fields, "fields")
-    art_movements_processed = process_multi_value_field(art_movements, "art movements")
-    bio_processed = process_bio(bio)
-
-    # Structured reperesntation
-    structured = {
-        "title": title_processed,
-        "year_period": year_processed,
-        "genre": genre_processed,
-        "art_style": art_style_processed,
-        "media": media_processed.split(" | "),
-        "description_tags": description_tags_processed.split(" | "),
-        "artist": artist_processed,
-        "nationality": nationality_processed,
-        "fields": fields_processed.split(" | "),
-        "art_movements": art_movements_processed.split(" | "),
-        "bio": bio_processed
-    }
-
-    return structured
-processed_data = joblib.load("data/processed_data.pkl")
-
-# Load SBERT model to be used for per-field embedding extraction
-model = SentenceTransformer('all-mpnet-base-v2') # all-roberta-large-v1, paraphrase-multilingual-mpnet-base-v2
-def prepare_field_text(value):
-    if isinstance(value, list):
-        return " | ".join(value) if value else ""
-    text = str(value).strip()
-    return text
-
-embedding_matrices = joblib.load("data/SBERT_embedding_matrices.pkl")
-
-#query_clean = format_text_fields(query["title"], query["year_created"], query["genre"], query["art_style"], query["media"],
-                    #query["description_tags"], query["artist"], query["art_movements"], query["fields"], query["nationality"],
-                    #query["bio"])
-
-def encode_query_sbert(query_structured, model):
-    query_embeddings = {}
-
-    for field, value in query_structured.items():
-        text = prepare_field_text(value)
-
-        if text == "":
-            continue
-
-        query_embeddings[field] = model.encode(text, normalize_embeddings=True)
-    return query_embeddings
-
-WEIGHTS = {
-    "title": 0.2,
-    "genre": 0.1,
-    "art_style": 0.1,
-    "description_tags": 0.1,
-    "media": 0.05,
-    "year_period": 0.05,
-    "artist": 0.05,
-    "nationality": 0.03,
-    "fields": 0.03,
-    "art_movements": 0.1,
-    "bio": 0.03
-}
-
-def normalise_weights(weights):
-    total = sum(weights.values())
-    return {k: v / total for k, v in weights.items()}
-
-WEIGHTS = normalise_weights(WEIGHTS)
-
-def compute_similarity_per_field_sbert(query_embeddings, embedding_matrices):
-    similarities = {}
-
-    for field, matrix in embedding_matrices.items():
-        q = query_embeddings.get(field)
-
-        if q is None:
-            similarities[field] = np.zeros(matrix.shape[0])
-            continue
-
-        sim = matrix @ q
-        similarities[field] = sim
-
-    return similarities
-
-def weighted_late_fusion(similarities, weights):
-    final_scores = np.zeros(len(next(iter(similarities.values()))))
-
-    for field, sim in similarities.items():
-        final_scores += weights.get(field, 0) * sim
-
-    return final_scores
-
-def get_top_k(final_scores, query_index, k=30):
-    final_scores = final_scores.copy()
-    final_scores[query_index] = -np.inf
-    top_indices = np.argpartition(final_scores, -k)[-k:]
-    top_indices = top_indices[np.argsort(final_scores[top_indices])[::-1]]
-    return top_indices, final_scores[top_indices]
-
-painting_id_to_index = {
-    pid: idx for idx, (_, pid) in enumerate(processed_data)
-}
-def recommend_sbert_query(query_structured, model, embedding_matrices, weights, painting_id_to_index, query_id, k=10):
-    query_embeddings = encode_query_sbert(query_structured, model)
-    similarities = compute_similarity_per_field_sbert(query_embeddings, embedding_matrices)
-    final_scores = weighted_late_fusion(similarities, weights)
-    query_index = painting_id_to_index[int(query_id)]
-    top_indices, scores = get_top_k(final_scores, query_index, k)
-    return top_indices, scores, similarities
-
-# 
-@app.route("/api/recommend_sbert", methods=["POST"])
-def recommend_sbert():
-    data = request.json
-    user_id = data["user_id"]
-    session_id = data.get("session_id")
-
-    if not user_id or not session_id:
-        return jsonify({
-            "success": False,
-            "error": "Missing user_id or session_id"
-        }), 400
-
-    k = data.get("k", 10)
-    request_id = generate_request_id()
-
-    interactions = fetch_user_interactions(user_id)
-    for i in interactions:
-        i["weight"] = compute_interaction_weight(i)
-
-    # -----------------------------
-    # BUILD USER PROFILE (PER FIELD)
-    # -----------------------------
-    user_profiles = {}
-    total_weights = {}
-
-    for field in embedding_matrices.keys():
-        user_profiles[field] = np.zeros(embedding_matrices[field].shape[1])
-        total_weights[field] = 0.0
-
-    for interaction in interactions:
-        pid = interaction["painting_id"]
-        w = interaction["weight"]
-
-        if abs(w) < 0.3:
-            continue
-
-        if pid not in painting_id_to_index:
-            continue
-
-        idx = painting_id_to_index[pid]
-
-        for field, matrix in embedding_matrices.items():
-            vec = matrix[idx]
-            user_profiles[field] += w * vec
-            total_weights[field] += abs(w)
-
-    # normalise per field
-    final_profile = []
-    for field in user_profiles:
-        if total_weights[field] > 0:
-            vec = user_profiles[field] / total_weights[field]
-            vec = vec / (np.linalg.norm(vec) + 1e-8)
-            final_profile.append(vec)
-
-    if len(final_profile) == 0:
-        return jsonify({
-            "success": False,
-            "error": "No strong interaction signal"
-        }), 200
-
-    user_profile = np.mean(final_profile, axis=0)
-    user_profile = user_profile / (np.linalg.norm(user_profile) + 1e-8)
-
-    # -----------------------------
-    # SCORE ALL PAINTINGS
-    # -----------------------------
-    scores = np.zeros(len(image_ids))
-
-    for field, matrix in embedding_matrices.items():
-        scores += matrix @ user_profile
-
-    scores = scores / len(embedding_matrices)
-
-    top_k_idx = np.argsort(scores)[::-1]
-
-    seen = get_seen_paintings(user_id)
-
-    results = []
-    db_rows = []
-    rank = 0
-
-    for idx in top_k_idx:
-        painting_id = int(image_ids[idx])
-        score = float(scores[idx])
-
-        if painting_id in seen:
-            continue
-
-        # if score < 0.05:
-        #     continue
-
-        results.append({
-            "painting_id": painting_id,
-            "score": score
-        })
-
-        db_rows.append((
-            session_id,
-            user_id,
-            painting_id,
-            request_id,
-            rank,
-            score,
-            datetime.utcnow()
-        ))
-
-        rank += 1
-        if rank >= k:
-            break
-
-    painting_ids = [r["painting_id"] for r in results]
-    db_paintings = fetch_paintings(painting_ids)
-    db_map = {p["painting_id"]: p for p in db_paintings}
-
-    final_results = []
-    for r in results:
-        pid = r["painting_id"]
-        meta = db_map.get(pid)
-
-        if not meta:
-            continue
-
-        final_results.append({
-            "painting_id": pid,
-            "score": r["score"],
-            "image_url": build_painting_url(meta["image_path"]),
-            "request_id": request_id
-        })
-
-    conn = get_db_connection()
-    cur = conn.cursor()
-
-    execute_values(cur, """
-        INSERT INTO recommendations_sbert (
-            session_id,
-            user_id,
-            painting_id,
-            request_id,
-            rank,
-            score,
-            created_at
-        )
-        VALUES %s
-    """, db_rows)
-
-    conn.commit()
-    cur.close()
-    conn.close()
-
-    return jsonify({
-        "user_id": user_id,
-        "request_id": request_id,
-        "recommendations": final_results
-    })
+#     # Normalise whitespace
+#     title = title.strip()
+#     title = re.sub(r'\s+', ' ', title)
+
+#     # Fix broken apostrophes e.g. "Martin S" → "Martin's" and normalise roman numerals
+#     title = re.sub(r"\b([A-Za-z]+)\s+S\b", r"\1's", title)
+#     title = normalize_roman_numerals(title)
+
+#     # Remove trailing index numbers only when safe
+#     if re.search(r'(untitled|drawing|study|composition|abstraction)', title, re.IGNORECASE):
+#         title = re.sub(r'\s*\(?\d+\)?$', '', title)
+
+#     title = re.sub(r'\s+', ' ', title).strip()
+
+#     return title
+
+# # Used to avoid cutting mid-word
+# def safe_cut(text, length):
+#     cut = text[:length]
+#     return cut[:cut.rfind(" ")] if " " in cut else cut
+
+# # Bio preprocessing, including character cutoff since bio fields contain the most
+# # characters and heavily bias the embedding space if left untrimmed
+# def process_bio(bio: str, max_chars=2000) -> str:
+#     if bio is None or bio.strip() == "":
+#         return "no biography available"
+
+#     # Normalise whitespace, including newlines and tabs
+#     bio = bio.strip()
+#     bio = re.sub(r'\s+', ' ', bio)
+
+#     # Truncate so that bio is token-safe for SBERT
+#     if len(bio) > max_chars:
+#         head_len = int(max_chars * 0.6)
+#         tail_len = max_chars - head_len
+
+#         head = safe_cut(bio, head_len)
+#         tail = safe_cut(bio[::-1], tail_len)[::-1]
+
+#         bio = f"{head} ... {tail}"
+
+#     return bio
+
+# # This method can be used for all categorical fields, to handle NULL/missing values, convert all fields to lowercase apart
+# # from artist and remove excess whitespace
+# def process_categorical_field(field_value: str, field_name: str = None) -> str:
+#     # Handle NULL/missing values
+#     if field_value is None or field_value.strip() == "":
+#         return f"unknown {field_name}"
+
+#     field_value = field_value.strip()
+
+#     # Normalise whitespace and convert all categoricals to lowercase except artist since it harms entity recognition
+#     field_value = re.sub(r'\s+', ' ', field_value)
+#     if field_name != "artist":
+#         field_value = field_value.lower()
+
+#     return field_value
+
+# # This method can be used for all multi-value fields, it handles nulls/missing values,
+# # converts all comma seperated items to lower case, and applies the respective preprocessing for description_tags,
+# # joining all value segments using |
+# def process_multi_value_field(feild_value: str, field_name: str = None) -> str:
+#     # Handle NULL/missing values
+#     if feild_value is None or feild_value.strip() == "":
+#         return f"unknown {field_name}"
+
+#     # Split on comma
+#     items = feild_value.split(",")
+#     cleaned = []
+#     for item in items:
+#         item = item.strip().lower()
+#         if item == "":
+#             continue
+
+#         # Replace hyphens with space when in-between words only and normalise internal whitespace
+#         if field_name == "description tags":
+#             item = re.sub(r'(?<=\w)-(?=\w)', ' ', item)
+
+#             # Apply segmentation only if; no spaces already, long enough, purely alphabetic
+#             if " " not in item and len(item) > 10 and item.isalpha():
+#                 split_words = wordninja.split(item)
+
+#                 # Safety checks to avoid bad splits (e.g. single char fragments)
+#                 if (len(split_words) > 1 and all(len(w) > 2 for w in split_words) and len(" ".join(split_words)) >= len(item) * 0.8):
+#                     item = " ".join(split_words)
+
+#         item = re.sub(r'\s+', ' ', item)
+#         cleaned.append(item)
+
+#     if not cleaned:
+#         return f"unknown {field_name}"
+
+#     # Deduplicate while preserving order
+#     unique_items = list(dict.fromkeys(cleaned))
+
+#     return " | ".join(unique_items)
+
+# # Instead of using years, encode them as semantic
+# def process_year(year_created):
+#     # NULL/missing
+#     if year_created is None or str(year_created).strip() == "":
+#         return "unknown period"
+
+#     try:
+#         year = int(year_created)
+#     except (ValueError, TypeError):
+#         return "unknown period"
+
+#     # Period mapping
+#     if year < 1400:
+#         return "medieval period 14th century"
+#     elif year < 1600:
+#         return "renaissance period 16th century"
+#     elif year < 1700:
+#         return "baroque period 17th century"
+#     elif year < 1800:
+#         return "rococo enlightenment period 18th century"
+#     elif year <= 1850:
+#         return "early modern period 18th century"
+#     elif year <= 1900:
+#         return "late 19th century impressionism era"
+#     elif year <= 1945:
+#         return "early 20th century modernism"
+#     elif year <= 1970:
+#         return "mid 20th century post war modern"
+#     elif year <= 2000:
+#         return "late 20th century contemporary"
+#     else:
+#         return "contemporary period 20th century"
+
+# def format_text_fields(title, year_created, genre, art_style, media, description_tags, artist, nationality, fields, art_movements, bio):
+#     title_processed = process_title(title)
+#     year_processed = process_year(year_created)
+#     genre_processed = process_categorical_field(genre, "genre")
+#     art_style_processed = process_categorical_field(art_style, "art style")
+#     media_processed = process_multi_value_field(media, "media")
+#     description_tags_processed = process_multi_value_field(description_tags, "description tags")
+#     artist_processed = process_categorical_field(artist, "artist")
+#     nationality_processed = process_categorical_field(nationality, "nationality")
+#     fields_processed = process_multi_value_field(fields, "fields")
+#     art_movements_processed = process_multi_value_field(art_movements, "art movements")
+#     bio_processed = process_bio(bio)
+
+#     # Structured reperesntation
+#     structured = {
+#         "title": title_processed,
+#         "year_period": year_processed,
+#         "genre": genre_processed,
+#         "art_style": art_style_processed,
+#         "media": media_processed.split(" | "),
+#         "description_tags": description_tags_processed.split(" | "),
+#         "artist": artist_processed,
+#         "nationality": nationality_processed,
+#         "fields": fields_processed.split(" | "),
+#         "art_movements": art_movements_processed.split(" | "),
+#         "bio": bio_processed
+#     }
+
+#     return structured
+# processed_data = joblib.load("data/processed_data.pkl")
+
+# # Load SBERT model to be used for per-field embedding extraction
+# # model = SentenceTransformer('all-mpnet-base-v2') # all-roberta-large-v1, paraphrase-multilingual-mpnet-base-v2
+# def prepare_field_text(value):
+#     if isinstance(value, list):
+#         return " | ".join(value) if value else ""
+#     text = str(value).strip()
+#     return text
+
+# embedding_matrices = joblib.load("data/SBERT_embedding_matrices.pkl")
+
+# #query_clean = format_text_fields(query["title"], query["year_created"], query["genre"], query["art_style"], query["media"],
+#                     #query["description_tags"], query["artist"], query["art_movements"], query["fields"], query["nationality"],
+#                     #query["bio"])
+
+# def encode_query_sbert(query_structured, model):
+#     query_embeddings = {}
+
+#     for field, value in query_structured.items():
+#         text = prepare_field_text(value)
+
+#         if text == "":
+#             continue
+
+#         query_embeddings[field] = model.encode(text, normalize_embeddings=True)
+#     return query_embeddings
+
+# WEIGHTS = {
+#     "title": 0.2,
+#     "genre": 0.1,
+#     "art_style": 0.1,
+#     "description_tags": 0.1,
+#     "media": 0.05,
+#     "year_period": 0.05,
+#     "artist": 0.05,
+#     "nationality": 0.03,
+#     "fields": 0.03,
+#     "art_movements": 0.1,
+#     "bio": 0.03
+# }
+
+# def normalise_weights(weights):
+#     total = sum(weights.values())
+#     return {k: v / total for k, v in weights.items()}
+
+# WEIGHTS = normalise_weights(WEIGHTS)
+
+# def compute_similarity_per_field_sbert(query_embeddings, embedding_matrices):
+#     similarities = {}
+
+#     for field, matrix in embedding_matrices.items():
+#         q = query_embeddings.get(field)
+
+#         if q is None:
+#             similarities[field] = np.zeros(matrix.shape[0])
+#             continue
+
+#         sim = matrix @ q
+#         similarities[field] = sim
+
+#     return similarities
+
+# def weighted_late_fusion(similarities, weights):
+#     final_scores = np.zeros(len(next(iter(similarities.values()))))
+
+#     for field, sim in similarities.items():
+#         final_scores += weights.get(field, 0) * sim
+
+#     return final_scores
+
+# def get_top_k(final_scores, query_index, k=30):
+#     final_scores = final_scores.copy()
+#     final_scores[query_index] = -np.inf
+#     top_indices = np.argpartition(final_scores, -k)[-k:]
+#     top_indices = top_indices[np.argsort(final_scores[top_indices])[::-1]]
+#     return top_indices, final_scores[top_indices]
+
+# painting_id_to_index = {
+#     pid: idx for idx, (_, pid) in enumerate(processed_data)
+# }
+# def recommend_sbert_query(query_structured, model, embedding_matrices, weights, painting_id_to_index, query_id, k=10):
+#     query_embeddings = encode_query_sbert(query_structured, model)
+#     similarities = compute_similarity_per_field_sbert(query_embeddings, embedding_matrices)
+#     final_scores = weighted_late_fusion(similarities, weights)
+#     query_index = painting_id_to_index[int(query_id)]
+#     top_indices, scores = get_top_k(final_scores, query_index, k)
+#     return top_indices, scores, similarities
+
+# # 
+# @app.route("/api/recommend_sbert", methods=["POST"])
+# def recommend_sbert():
+#     data = request.json
+#     user_id = data["user_id"]
+#     session_id = data.get("session_id")
+
+#     if not user_id or not session_id:
+#         return jsonify({
+#             "success": False,
+#             "error": "Missing user_id or session_id"
+#         }), 400
+
+#     k = data.get("k", 10)
+#     request_id = generate_request_id()
+
+#     interactions = fetch_user_interactions(user_id)
+#     for i in interactions:
+#         i["weight"] = compute_interaction_weight(i)
+
+#     user_profiles = {}
+#     total_weights = {}
+
+#     for field in embedding_matrices.keys():
+#         user_profiles[field] = np.zeros(embedding_matrices[field].shape[1])
+#         total_weights[field] = 0.0
+
+#     for interaction in interactions:
+#         pid = interaction["painting_id"]
+#         w = interaction["weight"]
+
+#         if abs(w) < 0.3:
+#             continue
+
+#         if pid not in painting_id_to_index:
+#             continue
+
+#         idx = painting_id_to_index[pid]
+
+#         for field, matrix in embedding_matrices.items():
+#             vec = matrix[idx]
+#             user_profiles[field] += w * vec
+#             total_weights[field] += abs(w)
+
+#     # normalise per field
+#     final_profile = []
+#     for field in user_profiles:
+#         if total_weights[field] > 0:
+#             vec = user_profiles[field] / total_weights[field]
+#             vec = vec / (np.linalg.norm(vec) + 1e-8)
+#             final_profile.append(vec)
+
+#     if len(final_profile) == 0:
+#         return jsonify({
+#             "success": False,
+#             "error": "No strong interaction signal"
+#         }), 200
+
+#     user_profile = np.mean(final_profile, axis=0)
+#     user_profile = user_profile / (np.linalg.norm(user_profile) + 1e-8)
+
+#     scores = np.zeros(len(image_ids))
+#     for field, matrix in embedding_matrices.items():
+#         scores += matrix @ user_profile
+
+#     scores = scores / len(embedding_matrices)
+
+#     top_k_idx = np.argsort(scores)[::-1]
+
+#     seen = get_seen_paintings(user_id)
+
+#     results = []
+#     db_rows = []
+#     rank = 0
+
+#     for idx in top_k_idx:
+#         painting_id = int(image_ids[idx])
+#         score = float(scores[idx])
+
+#         if painting_id in seen:
+#             continue
+
+#         # if score < 0.05:
+#         #     continue
+
+#         results.append({
+#             "painting_id": painting_id,
+#             "score": score
+#         })
+
+#         db_rows.append((
+#             session_id,
+#             user_id,
+#             painting_id,
+#             request_id,
+#             rank,
+#             score,
+#             datetime.utcnow()
+#         ))
+
+#         rank += 1
+#         if rank >= k:
+#             break
+
+#     painting_ids = [r["painting_id"] for r in results]
+#     db_paintings = fetch_paintings(painting_ids)
+#     db_map = {p["painting_id"]: p for p in db_paintings}
+
+#     final_results = []
+#     for r in results:
+#         pid = r["painting_id"]
+#         meta = db_map.get(pid)
+
+#         if not meta:
+#             continue
+
+#         final_results.append({
+#             "painting_id": pid,
+#             "score": r["score"],
+#             "image_url": build_painting_url(meta["image_path"]),
+#             "request_id": request_id
+#         })
+
+#     conn = get_db_connection()
+#     cur = conn.cursor()
+
+#     execute_values(cur, """
+#         INSERT INTO recommendations_sbert (
+#             session_id,
+#             user_id,
+#             painting_id,
+#             request_id,
+#             rank,
+#             score,
+#             created_at
+#         )
+#         VALUES %s
+#     """, db_rows)
+
+#     conn.commit()
+#     cur.close()
+#     conn.close()
+
+#     return jsonify({
+#         "user_id": user_id,
+#         "request_id": request_id,
+#         "recommendations": final_results
+#     })
 
 # CLIP
 # Load CLIP Model and Processor
-model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32", use_safetensors=True).to(device)
-model.eval()
-processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+model_clip = CLIPModel.from_pretrained("openai/clip-vit-base-patch32", use_safetensors=True).to(device)
+model_clip.eval()
+processor_clip = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
 
 image_tensors = joblib.load('data/image_tensors.pkl')
 text_tensors = joblib.load('data/text_tensors.pkl')
@@ -2524,25 +2459,26 @@ image_matrix = image_matrix / np.linalg.norm(image_matrix, axis=1, keepdims=True
 text_matrix = text_matrix / np.linalg.norm(text_matrix, axis=1, keepdims=True)
 
 def retrieve_by_text(query, top_k=10):
-    inputs = processor(text=[query], return_tensors="pt", padding=True, truncation=True).to(device)
+    inputs = processor_clip(text=query, return_tensors="pt", padding=True, truncation=True).to(device)
 
     with torch.no_grad():
-        q_emb = model.get_text_features(**inputs)
+        q_emb = model_clip.get_text_features(**inputs)
+        print("Embedding type: ", type(q_emb))
         q_emb = q_emb / q_emb.norm(dim=-1, keepdim=True)
 
     q_emb = q_emb.cpu().numpy()
 
     # cosine similarity
-    scores = image_matrix @ q_emb.T
+    scores = image_matrix @ q_emb.T  
     top_k_idx = np.argsort(scores[:, 0])[::-1][:top_k]
 
     return top_k_idx, scores[top_k_idx]
 
 def retrieve_by_image(image, top_k=10):
-    inputs = processor(images=image, return_tensors="pt").to(device)
+    inputs = processor_clip(images=image, return_tensors="pt").to(device)
 
     with torch.no_grad():
-        q_emb = model.get_image_features(**inputs)
+        q_emb = model_clip.get_image_features(**inputs)
         q_emb = q_emb / q_emb.norm(dim=-1, keepdim=True)
 
     q_emb = q_emb.cpu().numpy()
@@ -2554,39 +2490,19 @@ def retrieve_by_image(image, top_k=10):
     return top_k_idx, scores[top_k_idx]
 
 def hybrid_retrieve(query, alpha=0.6, top_k=10):
-    inputs = processor(
-        text=[query], 
-        return_tensors="pt",
-        padding=True,
-        truncation=True
-    ).to(device)
+    inputs = processor_clip(text=query, return_tensors="pt", padding=True, truncation=True).to(device)
 
     with torch.no_grad():
-        outputs = model(**inputs)
-
-        text_emb = outputs.text_embeds
-
-        if text_emb is None:
-            raise ValueError("CLIP forward pass failed: text_emb is None")
-
-        # normalize
+        text_emb = model_clip.get_text_features(**inputs)
         text_emb = text_emb / text_emb.norm(dim=-1, keepdim=True)
 
     text_emb = text_emb.cpu().numpy()
 
-    print("text_emb type:", type(text_emb))
-    print("text_emb shape:", getattr(text_emb, "shape", None))
-    print("text_emb ndim:", getattr(text_emb, "ndim", None))
-
-    # SAFETY CHECK
-    if text_emb is None or text_emb.shape[0] == 0:
-        raise ValueError("Invalid text embedding generated")
-
+    # cosine similarity
     text_scores = image_matrix @ text_emb.T
     text_side_scores = text_matrix @ text_emb.T
 
     final_scores = alpha * text_scores + (1 - alpha) * text_side_scores
-
     top_k_idx = np.argsort(final_scores[:, 0])[::-1][:top_k]
 
     return top_k_idx, final_scores[top_k_idx]
@@ -2654,7 +2570,6 @@ def search_clip():
                 continue
 
             image_url = build_painting_url(meta["image_path"])
-
             final_results.append({
                 "painting_id": pid,
                 "score": score,
