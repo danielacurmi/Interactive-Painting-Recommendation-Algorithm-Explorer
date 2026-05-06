@@ -31,8 +31,12 @@ h3{
   object-fit: cover;
 }
 
+#container {
+   margin-top: 0;
+}
+
 .container {
-  padding-top: 30px;
+  padding-top: 0px;
   display: flex;
   flex-wrap: wrap;
   justify-content: space-evenly; /* distributes evenly across the row */
@@ -628,6 +632,23 @@ input{
 
 #searchBar:focus {
   border-color: #000;
+}
+
+.search-header {
+    font-size: 1.4rem;
+    margin: 10px 0 5px; 
+    color: #ffffff;
+    padding-left: 15px;
+    padding-bottom: 0px;
+    margin-bottom: 0px;
+}
+
+.search-header .query {
+    font-weight: 600;
+    color: #ffffff;
+    background: rgba(149, 149, 149, 0.374);
+    padding: 2px 6px;
+    border-radius: 6px;
 }
 
 /* Board Grid */

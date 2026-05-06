@@ -649,22 +649,15 @@ async function handleSearchInput(event) {
 
             // Load results into grid using existing pipeline
             window.loadImages();
+            event.target.value = "";
+
+            const header = document.getElementById("searchHeader");
+            header.style.display = "block";
+            header.innerHTML = `Search results for <span class="query">"${query}"</span>`;
 
         } catch (err) {
             console.error("Search failed:", err);
             showToast("An error occurred while trying to search.");
         }
     }
-    clearSearch()
 }
-
-function clearSearch() {
-    isSearchMode = false;
-    searchResultsBuffer = [];
-
-    const container = document.getElementById('container');
-    container.querySelectorAll('.col').forEach(col => col.innerHTML = "");
-
-    window.loadImages();
-}
-
