@@ -2231,7 +2231,7 @@ def encode_query_sbert(query_structured, model):
         query_embeddings[field] = model.encode(text, normalize_embeddings=True)
     return query_embeddings
 
-WEIGHTS = {
+WEIGHTS_SBERT = {
     "title": 0.2,
     "genre": 0.1,
     "art_style": 0.1,
@@ -2249,7 +2249,7 @@ def normalise_weights(weights):
     total = sum(weights.values())
     return {k: v / total for k, v in weights.items()}
 
-WEIGHTS = normalise_weights(WEIGHTS)
+WEIGHTS_SBERT = normalise_weights(WEIGHTS_SBERT)
 
 def compute_similarity_per_field_sbert(query_embeddings, embedding_matrices):
     similarities = {}
@@ -2291,6 +2291,22 @@ def recommend_sbert_query(query_structured, model, embedding_matrices, weights, 
     query_index = painting_id_to_index[int(query_id)]
     top_indices, scores = get_top_k(final_scores, query_index, k)
     return top_indices, scores, similarities
+
+def get_seen_paintings_explore(user_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT DISTINCT painting_id
+        FROM recommendations_sbert
+        WHERE user_id = %s
+    """, (user_id,))
+
+    seen = {row[0] for row in cur.fetchall()}
+
+    cur.close()
+    conn.close()
+    return seen
 
 @app.route("/api/recommend_sbert", methods=["POST"])
 def recommend_sbert():
@@ -2336,31 +2352,24 @@ def recommend_sbert():
             total_weights[field] += abs(w)
 
     # normalise per field
-    final_profile = []
-    for field in user_profiles:
-        if total_weights[field] > 0:
-            vec = user_profiles[field] / total_weights[field]
-            vec = vec / (np.linalg.norm(vec) + 1e-8)
-            final_profile.append(vec)
+    field_scores = {}
+    for field, matrix in embedding_matrices.items():
 
-    if len(final_profile) == 0:
-        return jsonify({
-            "success": False,
-            "error": "No strong interaction signal"
-        }), 200
+        if total_weights[field] == 0:
+            continue
 
-    user_profile = np.mean(final_profile, axis=0)
-    user_profile = user_profile / (np.linalg.norm(user_profile) + 1e-8)
+        profile = user_profiles[field] / total_weights[field]
+        profile = profile / (np.linalg.norm(profile) + 1e-8)
+        sim = matrix @ profile
+        field_scores[field] = sim
 
     scores = np.zeros(len(image_ids))
-    for field, matrix in embedding_matrices.items():
-        scores += matrix @ user_profile
+    for field, sim in field_scores.items():
+        scores += WEIGHTS_SBERT.get(field, 0) * sim
 
-    scores = scores / len(embedding_matrices)
-
+    scores = (scores - scores.min()) / (scores.max() - scores.min() + 1e-8)
     top_k_idx = np.argsort(scores)[::-1]
-
-    seen = get_seen_paintings(user_id)
+    seen = get_seen_paintings_explore(user_id)
 
     results = []
     db_rows = []
