@@ -976,10 +976,11 @@ def extract_visual_features(image_rgb):
     return palette, palette_type
 
 # Neural Style Transfer
-device_cuda = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(device_cuda)
+device = torch.device("cpu")
+device_nst = torch.device("cuda")
+print(device_nst)
 
-image_size = 512 if device_cuda.type == "cuda" else 256
+image_size = 512 if device_nst.type == "cuda" else 256
 print(image_size)
 
 normalization_mean = [0.485, 0.456, 0.406]
@@ -997,7 +998,7 @@ transform_style = transforms.Compose([
 def load_image(image_path):
     image = Image.open(image_path).convert('RGB')
     image = transform_style(image).unsqueeze(0)  # Add batch dimension
-    return image.to(device_cuda)
+    return image.to(device_nst)
 
 
 def save_image(tensor, path):
@@ -1016,7 +1017,7 @@ def gram_matrix(tensor):
 
 # Load VGG19 model with pre-trained weights
 def load_vgg():
-    vgg = models.vgg19(weights=VGG19_Weights.DEFAULT).features.to(device_cuda).eval()
+    vgg = models.vgg19(weights=VGG19_Weights.DEFAULT).features.to(device_nst).eval()
     for param in vgg.parameters():
         param.requires_grad = False
     return vgg
@@ -1072,9 +1073,9 @@ def run_style_transfer(content_img_path, style_img_path, output_path, num_steps=
 
         # Initialize generated image
         if init_from_content:
-            generated_img = content_img.clone().to(device_cuda).requires_grad_(True)
+            generated_img = content_img.clone().to(device_nst).requires_grad_(True)
         else:
-            generated_img = torch.randn((1, 3, 512, 512), device=device_cuda, requires_grad=True)
+            generated_img = torch.randn((1, 3, 512, 512), device=device_nst, requires_grad=True)
 
         optimizer = optim.LBFGS([generated_img])
 
@@ -1804,7 +1805,7 @@ def preprocess_image(image_path):
 # model_resnet.eval()
 
 def extract_resnet_features(model, img_tensor):
-    img_tensor = img_tensor.unsqueeze(0).to(device_cuda)
+    img_tensor = img_tensor.unsqueeze(0).to(device_nst)
 
     with torch.no_grad():
         features = model(img_tensor)
@@ -2451,8 +2452,16 @@ def recommend_sbert():
 
 # CLIP
 # Load CLIP Model and Processor
-device = torch.device("cpu")
 print("CLIP device: ", device)
+print("NST Device: ", device_nst)
+
+print("Torch:", torch.__version__)
+print("CUDA:", torch.version.cuda)
+
+print("GPU:", torch.cuda.get_device_name(0))
+print("Capability:", torch.cuda.get_device_capability(0))
+
+print(torch.cuda.is_available())
 model_clip = CLIPModel.from_pretrained("openai/clip-vit-base-patch32", use_safetensors=True).to(device)
 model_clip.eval()
 processor_clip = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
