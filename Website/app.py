@@ -10,7 +10,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torchvision import transforms, models
 from PIL import Image
-from datetime import datetime
+from datetime import datetime, timezone
 import psycopg2
 import psycopg2.extras
 from psycopg2.extras import execute_values
@@ -523,6 +523,7 @@ def fetch_user_interactions(user_id):
             BOOL_OR(s.save_to_gallary) AS save_to_gallery,
             BOOL_OR(s.click) AS click,
             MAX(s.review) AS review,
+            MAX(r.created_at) AS interaction_time,
 
             CASE
                 WHEN r.request_id IN (
@@ -579,7 +580,8 @@ def fetch_user_interactions(user_id):
             "save_to_gallery": r["save_to_gallery"],
             "click": r["click"],
             "review": r["review"],
-            "skip": r["skip"]
+            "skip": r["skip"],
+            "interaction_time": r["interaction_time"]
         })
 
     return interactions
@@ -884,12 +886,6 @@ def style_transfer_api():
     style_file = request.files.get('style')
     if not content_file or not style_file:
         return jsonify({'error': 'Missing files'}), 400
-
-    # Save temporary files
-    #content_path = os.path.join(GENERATED_DIR, content_file.filename)
-    #style_path = os.path.join(GENERATED_DIR, style_file.filename)
-    #content_file.save(content_path)
-    #style_file.save(style_path)
 
     # Create output filename
     timestamp = datetime.now().strftime("%Y_%m_%d__%H_%M_%S")
@@ -1719,15 +1715,32 @@ INTERACTION_WEIGHTS = {
     "rating": 2.0,
     "review": 0.5,
     "favourite": 3.0,
-    "not_interested": -3.0,
+    "not_interested": 3.0,
     "save_to_gallery": 2.0,
     "viewing_time": 1.0,
     "click": 0.5,
-    "skip": -2.0
+    "skip": 2.0
 }
 
 def rank_discount(rank):
     return 1.0 / np.log2(rank + 2)
+
+def temporal_decay(interaction_time, decay_lambda=0.03):
+    """
+    Exponential temporal decay.
+
+    decay_lambda:
+        Higher = faster forgetting
+        Lower = slower forgetting
+    """
+    if interaction_time is None:
+        return 1.0
+
+    now = datetime.now(timezone.utc)
+    age_days = (now - interaction_time).days
+    decay = np.exp(-decay_lambda * age_days)
+
+    return decay
 
 def compute_interaction_weight(interaction):
     """
@@ -1739,42 +1752,44 @@ def compute_interaction_weight(interaction):
     # Explicit Feedback with high signal since it's more indicative of user preferences
     rating = interaction.get("rating")
     if rating is not None:
-        if rating >= 4:
+        if rating >= 3:
             weight += INTERACTION_WEIGHTS["rating"] * (rating / 5.0)
         elif rating <= 2:
             weight -= INTERACTION_WEIGHTS["rating"] * (1 - rating / 5.0)
 
     if interaction.get("favourite"):
-        weight += INTERACTION_WEIGHTS["favourite"]
+        weight += abs(INTERACTION_WEIGHTS["favourite"])
 
     if interaction.get("not_interested"):
-        weight += INTERACTION_WEIGHTS["not_interested"]
+        weight -= abs(INTERACTION_WEIGHTS["not_interested"])
 
     if interaction.get("review"):
-        weight += INTERACTION_WEIGHTS["review"]
+        weight += abs(INTERACTION_WEIGHTS["review"])
 
     if interaction.get("save_to_gallery"):
-        weight += INTERACTION_WEIGHTS["save_to_gallery"]
+        weight += abs(INTERACTION_WEIGHTS["save_to_gallery"])
 
     # Implicit Feedback has a lower signal since it's relatively weak
-    if interaction.get("click"):
-        weight += INTERACTION_WEIGHTS["click"]
+    # only reward clicks if not disliked
+    if (interaction.get("click") and not interaction.get("not_interested")):
+        weight += abs(INTERACTION_WEIGHTS["click"])
 
     viewing_time = interaction.get("viewing_time")
-    if viewing_time is not None:
-        # Log-scaled dwell time
+    if (viewing_time is not None and not interaction.get("not_interested")):
         norm_time = np.log1p(viewing_time) / np.log(60)
-        norm_time = min(norm_time, 1.0)  # cap
-        weight += INTERACTION_WEIGHTS["viewing_time"] * norm_time
+        norm_time = min(norm_time, 1.0)
+        weight += abs(INTERACTION_WEIGHTS["viewing_time"] * norm_time)
 
     # Skip is a derived negative interaction
     if interaction.get("skip"):
-        rank = interaction.get("rank", 10)  # fallback
-
-        # Rank discount (log-based)
+        rank = interaction.get("rank", 10)  
         discount = rank_discount(rank)
+        weight -= abs(INTERACTION_WEIGHTS["skip"] * discount)
 
-        weight += INTERACTION_WEIGHTS["skip"] * discount
+    # Temporal Decay
+    interaction_time = interaction.get("interaction_time")
+    decay = temporal_decay(interaction_time)
+    weight *= decay
 
     return weight
 
@@ -1788,31 +1803,6 @@ transform = transforms.Compose([
         std =[0.229, 0.224, 0.225]
     )
 ])
-
-def preprocess_image(image_path):
-    try:
-        img = Image.open(image_path).convert("RGB")
-        img = transform(img)
-        return img
-    except:
-        return None
-
-# model_resnet = models.resnet50(pretrained=True)
-
-# # Remove final classification layer (fc)
-# model_resnet = torch.nn.Sequential(*list(model_resnet.children())[:-1])
-# model_resnet.to(device)
-# model_resnet.eval()
-
-def extract_resnet_features(model, img_tensor):
-    img_tensor = img_tensor.unsqueeze(0).to(device_nst)
-
-    with torch.no_grad():
-        features = model(img_tensor)
-
-    features = features.squeeze(-1).squeeze(-1)  # (1, 2048)
-
-    return features.cpu().numpy().flatten()
 
 # Load embeddings
 data = joblib.load('data/resnet50_embeddings.pkl')
@@ -1857,9 +1847,7 @@ def score_paintings_from_interactions(interactions, embeddings, id_to_idx):
 
         idx = id_to_idx[pid]
         vec = embeddings[idx]   
-
-        # cosine similarity with ALL paintings
-        sim = embeddings @ vec   # shape [N]
+        sim = embeddings @ vec   
 
         scores += w * sim
         total_weight += abs(w)
@@ -2033,204 +2021,9 @@ def recommend_resnet():
     })
 
 # SBERT
-# Title preprocessing i.e. NULL/missing handling and text normalisation
-ROMAN_NUMERAL_PATTERN = re.compile(r'\b(i{1,3}|iv|v|vi{0,3}|ix|x)\b', re.IGNORECASE)
-
-def normalize_roman_numerals(text: str) -> str:
-    return ROMAN_NUMERAL_PATTERN.sub(lambda m: m.group(0).upper(), text)
-
-def process_title(title: str) -> str:
-    # Handle NULL/missing values
-    if title is None or title.strip() == "":
-        return "unknown title"
-
-    # Normalise whitespace
-    title = title.strip()
-    title = re.sub(r'\s+', ' ', title)
-
-    # Fix broken apostrophes e.g. "Martin S" → "Martin's" and normalise roman numerals
-    title = re.sub(r"\b([A-Za-z]+)\s+S\b", r"\1's", title)
-    title = normalize_roman_numerals(title)
-
-    # Remove trailing index numbers only when safe
-    if re.search(r'(untitled|drawing|study|composition|abstraction)', title, re.IGNORECASE):
-        title = re.sub(r'\s*\(?\d+\)?$', '', title)
-
-    title = re.sub(r'\s+', ' ', title).strip()
-
-    return title
-
-# Used to avoid cutting mid-word
-def safe_cut(text, length):
-    cut = text[:length]
-    return cut[:cut.rfind(" ")] if " " in cut else cut
-
-# Bio preprocessing, including character cutoff since bio fields contain the most
-# characters and heavily bias the embedding space if left untrimmed
-def process_bio(bio: str, max_chars=2000) -> str:
-    if bio is None or bio.strip() == "":
-        return "no biography available"
-
-    # Normalise whitespace, including newlines and tabs
-    bio = bio.strip()
-    bio = re.sub(r'\s+', ' ', bio)
-
-    # Truncate so that bio is token-safe for SBERT
-    if len(bio) > max_chars:
-        head_len = int(max_chars * 0.6)
-        tail_len = max_chars - head_len
-
-        head = safe_cut(bio, head_len)
-        tail = safe_cut(bio[::-1], tail_len)[::-1]
-
-        bio = f"{head} ... {tail}"
-
-    return bio
-
-# This method can be used for all categorical fields, to handle NULL/missing values, convert all fields to lowercase apart
-# from artist and remove excess whitespace
-def process_categorical_field(field_value: str, field_name: str = None) -> str:
-    # Handle NULL/missing values
-    if field_value is None or field_value.strip() == "":
-        return f"unknown {field_name}"
-
-    field_value = field_value.strip()
-
-    # Normalise whitespace and convert all categoricals to lowercase except artist since it harms entity recognition
-    field_value = re.sub(r'\s+', ' ', field_value)
-    if field_name != "artist":
-        field_value = field_value.lower()
-
-    return field_value
-
-# This method can be used for all multi-value fields, it handles nulls/missing values,
-# converts all comma seperated items to lower case, and applies the respective preprocessing for description_tags,
-# joining all value segments using |
-def process_multi_value_field(feild_value: str, field_name: str = None) -> str:
-    # Handle NULL/missing values
-    if feild_value is None or feild_value.strip() == "":
-        return f"unknown {field_name}"
-
-    # Split on comma
-    items = feild_value.split(",")
-    cleaned = []
-    for item in items:
-        item = item.strip().lower()
-        if item == "":
-            continue
-
-        # Replace hyphens with space when in-between words only and normalise internal whitespace
-        if field_name == "description tags":
-            item = re.sub(r'(?<=\w)-(?=\w)', ' ', item)
-
-            # Apply segmentation only if; no spaces already, long enough, purely alphabetic
-            if " " not in item and len(item) > 10 and item.isalpha():
-                split_words = wordninja.split(item)
-
-                # Safety checks to avoid bad splits (e.g. single char fragments)
-                if (len(split_words) > 1 and all(len(w) > 2 for w in split_words) and len(" ".join(split_words)) >= len(item) * 0.8):
-                    item = " ".join(split_words)
-
-        item = re.sub(r'\s+', ' ', item)
-        cleaned.append(item)
-
-    if not cleaned:
-        return f"unknown {field_name}"
-
-    # Deduplicate while preserving order
-    unique_items = list(dict.fromkeys(cleaned))
-
-    return " | ".join(unique_items)
-
-# Instead of using years, encode them as semantic
-def process_year(year_created):
-    # NULL/missing
-    if year_created is None or str(year_created).strip() == "":
-        return "unknown period"
-
-    try:
-        year = int(year_created)
-    except (ValueError, TypeError):
-        return "unknown period"
-
-    # Period mapping
-    if year < 1400:
-        return "medieval period 14th century"
-    elif year < 1600:
-        return "renaissance period 16th century"
-    elif year < 1700:
-        return "baroque period 17th century"
-    elif year < 1800:
-        return "rococo enlightenment period 18th century"
-    elif year <= 1850:
-        return "early modern period 18th century"
-    elif year <= 1900:
-        return "late 19th century impressionism era"
-    elif year <= 1945:
-        return "early 20th century modernism"
-    elif year <= 1970:
-        return "mid 20th century post war modern"
-    elif year <= 2000:
-        return "late 20th century contemporary"
-    else:
-        return "contemporary period 20th century"
-
-def format_text_fields(title, year_created, genre, art_style, media, description_tags, artist, nationality, fields, art_movements, bio):
-    title_processed = process_title(title)
-    year_processed = process_year(year_created)
-    genre_processed = process_categorical_field(genre, "genre")
-    art_style_processed = process_categorical_field(art_style, "art style")
-    media_processed = process_multi_value_field(media, "media")
-    description_tags_processed = process_multi_value_field(description_tags, "description tags")
-    artist_processed = process_categorical_field(artist, "artist")
-    nationality_processed = process_categorical_field(nationality, "nationality")
-    fields_processed = process_multi_value_field(fields, "fields")
-    art_movements_processed = process_multi_value_field(art_movements, "art movements")
-    bio_processed = process_bio(bio)
-
-    # Structured reperesntation
-    structured = {
-        "title": title_processed,
-        "year_period": year_processed,
-        "genre": genre_processed,
-        "art_style": art_style_processed,
-        "media": media_processed.split(" | "),
-        "description_tags": description_tags_processed.split(" | "),
-        "artist": artist_processed,
-        "nationality": nationality_processed,
-        "fields": fields_processed.split(" | "),
-        "art_movements": art_movements_processed.split(" | "),
-        "bio": bio_processed
-    }
-
-    return structured
 processed_data = joblib.load("data/processed_data.pkl")
-
-# Load SBERT model to be used for per-field embedding extraction
-# model = SentenceTransformer('all-mpnet-base-v2') # all-roberta-large-v1, paraphrase-multilingual-mpnet-base-v2
-def prepare_field_text(value):
-    if isinstance(value, list):
-        return " | ".join(value) if value else ""
-    text = str(value).strip()
-    return text
-
 embedding_matrices = joblib.load("data/SBERT_embedding_matrices.pkl")
-
-#query_clean = format_text_fields(query["title"], query["year_created"], query["genre"], query["art_style"], query["media"],
-                    #query["description_tags"], query["artist"], query["art_movements"], query["fields"], query["nationality"],
-                    #query["bio"])
-
-def encode_query_sbert(query_structured, model):
-    query_embeddings = {}
-
-    for field, value in query_structured.items():
-        text = prepare_field_text(value)
-
-        if text == "":
-            continue
-
-        query_embeddings[field] = model.encode(text, normalize_embeddings=True)
-    return query_embeddings
+# full similarity matrices are unfeasable 
 
 WEIGHTS_SBERT = {
     "title": 0.2,
@@ -2252,48 +2045,11 @@ def normalise_weights(weights):
 
 WEIGHTS_SBERT = normalise_weights(WEIGHTS_SBERT)
 
-def compute_similarity_per_field_sbert(query_embeddings, embedding_matrices):
-    similarities = {}
-
-    for field, matrix in embedding_matrices.items():
-        q = query_embeddings.get(field)
-
-        if q is None:
-            similarities[field] = np.zeros(matrix.shape[0])
-            continue
-
-        sim = matrix @ q
-        similarities[field] = sim
-
-    return similarities
-
-def weighted_late_fusion(similarities, weights):
-    final_scores = np.zeros(len(next(iter(similarities.values()))))
-
-    for field, sim in similarities.items():
-        final_scores += weights.get(field, 0) * sim
-
-    return final_scores
-
-def get_top_k(final_scores, query_index, k=30):
-    final_scores = final_scores.copy()
-    final_scores[query_index] = -np.inf
-    top_indices = np.argpartition(final_scores, -k)[-k:]
-    top_indices = top_indices[np.argsort(final_scores[top_indices])[::-1]]
-    return top_indices, final_scores[top_indices]
-
 painting_id_to_index = {
     pid: idx for idx, (_, pid) in enumerate(processed_data)
 }
-def recommend_sbert_query(query_structured, model, embedding_matrices, weights, painting_id_to_index, query_id, k=10):
-    query_embeddings = encode_query_sbert(query_structured, model)
-    similarities = compute_similarity_per_field_sbert(query_embeddings, embedding_matrices)
-    final_scores = weighted_late_fusion(similarities, weights)
-    query_index = painting_id_to_index[int(query_id)]
-    top_indices, scores = get_top_k(final_scores, query_index, k)
-    return top_indices, scores, similarities
 
-def get_seen_paintings_explore(user_id):
+def get_seen_paintings_explore(user_id, session_id):
     conn = get_db_connection()
     cur = conn.cursor()
 
@@ -2301,7 +2057,8 @@ def get_seen_paintings_explore(user_id):
         SELECT DISTINCT painting_id
         FROM recommendations_sbert
         WHERE user_id = %s
-    """, (user_id,))
+            AND session_id = %s
+    """, (user_id, session_id))
 
     seen = {row[0] for row in cur.fetchall()}
 
@@ -2309,37 +2066,44 @@ def get_seen_paintings_explore(user_id):
     conn.close()
     return seen
 
-@app.route("/api/recommend_sbert", methods=["POST"])
-def recommend_sbert():
-    data = request.json
-    user_id = data["user_id"]
-    session_id = data.get("session_id")
+@app.route("/api/recommend_sbert", methods=["POST"]) 
+def recommend_sbert(): 
+    data = request.json 
+    user_id = data["user_id"] 
+    session_id = data.get("session_id") 
+    
+    if not user_id or not session_id: 
+        return jsonify({ "success": False, 
+                        "error": "Missing user_id or session_id" }), 400 
+        
+    k = data.get("k", 10) 
+    request_id = generate_request_id() 
+    interactions = fetch_user_interactions(user_id) 
+    
+    for i in interactions: 
+        i["weight"] = compute_interaction_weight(i) 
 
-    if not user_id or not session_id:
-        return jsonify({
-            "success": False,
-            "error": "Missing user_id or session_id"
-        }), 400
+    positive_profiles = {}
+    negative_profiles = {}
 
-    k = data.get("k", 10)
-    request_id = generate_request_id()
+    positive_weights = {}
+    negative_weights = {}
 
-    interactions = fetch_user_interactions(user_id)
-    for i in interactions:
-        i["weight"] = compute_interaction_weight(i)
+    for field, matrix in embedding_matrices.items():
 
-    user_profiles = {}
-    total_weights = {}
+        dim = matrix.shape[1]
 
-    for field in embedding_matrices.keys():
-        user_profiles[field] = np.zeros(embedding_matrices[field].shape[1])
-        total_weights[field] = 0.0
+        positive_profiles[field] = np.zeros(dim)
+        negative_profiles[field] = np.zeros(dim)
 
+        positive_weights[field] = 0.0
+        negative_weights[field] = 0.0
+        
     for interaction in interactions:
         pid = interaction["painting_id"]
         w = interaction["weight"]
 
-        if abs(w) < 0.3:
+        if abs(w) < 0.1:
             continue
 
         if pid not in painting_id_to_index:
@@ -2349,118 +2113,292 @@ def recommend_sbert():
 
         for field, matrix in embedding_matrices.items():
             vec = matrix[idx]
-            user_profiles[field] += w * vec
-            total_weights[field] += abs(w)
 
-    # normalise per field
+            if w > 0:
+                positive_profiles[field] += w * vec
+                positive_weights[field] += w
+
+            else:
+                negative_profiles[field] += abs(w) * vec
+                negative_weights[field] += abs(w)
+            
+    # normalise per field 
     field_scores = {}
     for field, matrix in embedding_matrices.items():
 
-        if total_weights[field] == 0:
-            continue
+        pos_sim = np.zeros(matrix.shape[0])
+        neg_sim = np.zeros(matrix.shape[0])
 
-        profile = user_profiles[field] / total_weights[field]
-        profile = profile / (np.linalg.norm(profile) + 1e-8)
-        sim = matrix @ profile
-        field_scores[field] = sim
+        # Positive profile
+        if positive_weights[field] > 0:
+            pos_profile = (positive_profiles[field] / positive_weights[field])
+            pos_profile /= (np.linalg.norm(pos_profile) + 1e-8)
+            pos_sim = matrix @ pos_profile
 
-    scores = np.zeros(len(image_ids))
-    for field, sim in field_scores.items():
-        scores += WEIGHTS_SBERT.get(field, 0) * sim
+        # Negative profile
+        if negative_weights[field] > 0:
+            neg_profile = (negative_profiles[field] / negative_weights[field])
+            neg_profile /= (np.linalg.norm(neg_profile) + 1e-8)
+            neg_sim = matrix @ neg_profile
 
-    scores = (scores - scores.min()) / (scores.max() - scores.min() + 1e-8)
-    top_k_idx = np.argsort(scores)[::-1]
-    seen = get_seen_paintings_explore(user_id)
+        # Final field score
+        field_scores[field] = pos_sim - (0.5 * neg_sim)
+        
+    scores = np.zeros(len(image_ids)) 
+    for field, sim in field_scores.items(): 
+        scores += WEIGHTS_SBERT.get(field, 0) * sim 
+        
+    # scores = (scores - scores.min()) / (scores.max() - scores.min() + 1e-8) 
+    scores = np.clip(scores, -1.0, 1.0)
+    top_k_idx = np.argsort(scores)[::-1] 
 
-    results = []
-    db_rows = []
-    rank = 0
-
-    for idx in top_k_idx:
-        painting_id = int(image_ids[idx])
-        score = float(scores[idx])
-
-        if painting_id in seen:
-            continue
-
-        # if score < 0.05:
-        #     continue
-
-        results.append({
-            "painting_id": painting_id,
-            "score": score
+    seen = get_seen_paintings_explore(user_id, session_id) 
+    results = [] 
+    db_rows = [] 
+    rank = 0 
+    
+    for idx in top_k_idx: 
+        painting_id = int(image_ids[idx]) 
+        score = float(scores[idx]) 
+        
+        if painting_id in seen: 
+            continue 
+        
+        if score < 0.05:
+            continue 
+        
+        results.append({ 
+            "painting_id": painting_id, 
+            "score": score 
+            }) 
+        
+        db_rows.append(( 
+            session_id, 
+            user_id, 
+            painting_id, 
+            request_id, 
+            rank, 
+            score, 
+            datetime.utcnow() 
+            )) 
+        
+        rank += 1 
+        
+        if rank >= k: 
+            break 
+        
+    painting_ids = [r["painting_id"] for r in results] 
+    db_paintings = fetch_paintings(painting_ids) 
+    db_map = {p["painting_id"]: p for p in db_paintings} 
+    
+    final_results = [] 
+    
+    for r in results: 
+        pid = r["painting_id"] 
+        meta = db_map.get(pid) 
+        
+        if not meta: 
+            continue 
+        
+        final_results.append({ 
+            "painting_id": pid, 
+            "score": r["score"], 
+            "image_url": build_painting_url(meta["image_path"]), 
+            "request_id": request_id }) 
+        
+    conn = get_db_connection() 
+    cur = conn.cursor() 
+    
+    execute_values(cur, """ 
+                    INSERT INTO recommendations_sbert ( 
+                    session_id, 
+                    user_id, 
+                    painting_id, 
+                    request_id, 
+                    rank, 
+                    score, 
+                    created_at 
+                    ) VALUES %s 
+                    """, db_rows) 
+    
+    conn.commit() 
+    cur.close() 
+    conn.close() 
+    
+    return jsonify({ 
+        "user_id": user_id, 
+        "request_id": request_id, 
+        "recommendations": final_results 
         })
 
-        db_rows.append((
-            session_id,
-            user_id,
-            painting_id,
-            request_id,
-            rank,
-            score,
-            datetime.utcnow()
-        ))
 
-        rank += 1
-        if rank >= k:
-            break
+# @app.route("/api/recommend_sbert", methods=["POST"])
+# def recommend_sbert():
+#     data = request.json
+#     user_id = data["user_id"]
+#     session_id = data.get("session_id")
 
-    painting_ids = [r["painting_id"] for r in results]
-    db_paintings = fetch_paintings(painting_ids)
-    db_map = {p["painting_id"]: p for p in db_paintings}
+#     if not user_id or not session_id:
+#         return jsonify({
+#             "success": False,
+#             "error": "Missing user_id or session_id"
+#         }), 400
 
-    final_results = []
-    for r in results:
-        pid = r["painting_id"]
-        meta = db_map.get(pid)
+#     k = data.get("k", 10)
+#     request_id = generate_request_id()
 
-        if not meta:
-            continue
+#     interactions = fetch_user_interactions(user_id)
+#     for i in interactions:
+#         i["weight"] = compute_interaction_weight(i)
 
-        final_results.append({
-            "painting_id": pid,
-            "score": r["score"],
-            "image_url": build_painting_url(meta["image_path"]),
-            "request_id": request_id
-        })
+#     with torch.no_grad():
+#         field_scores = {}
 
-    conn = get_db_connection()
-    cur = conn.cursor()
+#         for field, matrix in embedding_matrices_torch.items():
 
-    execute_values(cur, """
-        INSERT INTO recommendations_sbert (
-            session_id,
-            user_id,
-            painting_id,
-            request_id,
-            rank,
-            score,
-            created_at
-        )
-        VALUES %s
-    """, db_rows)
+#             field_scores[field] = torch.zeros(
+#                 matrix.shape[0],
+#                 dtype=torch.float32,
+#                 device=device
+#             )
 
-    conn.commit()
-    cur.close()
-    conn.close()
+#         total_weight = 0.0
 
-    return jsonify({
-        "user_id": user_id,
-        "request_id": request_id,
-        "recommendations": final_results
-     })
+#         for interaction in interactions:
+
+#             pid = interaction["painting_id"]
+#             w = interaction["weight"]
+
+#             if pid not in painting_id_to_index:
+#                 continue
+
+#             idx = painting_id_to_index[pid]
+
+#             for field, matrix in embedding_matrices_torch.items():
+
+#                 vec = matrix[idx]
+#                 sim = matrix @ vec
+
+#                 field_scores[field] += w * sim
+
+#             total_weight += abs(w)
+
+#         if total_weight == 0:
+#             return jsonify({
+#                 "success": False,
+#                 "error": "No strong interaction signal"
+#             }), 200
+
+#         for field in field_scores:
+#             field_scores[field] /= total_weight
+
+#         scores = torch.zeros(
+#             len(image_ids),
+#             dtype=torch.float32,
+#             device=device
+#         )
+
+#         for field, sim in field_scores.items():
+#             scores += WEIGHTS_SBERT.get(field, 0) * sim
+
+#         scores = (
+#             (scores - torch.min(scores)) /
+#             (torch.max(scores) - torch.min(scores) + 1e-8)
+#         )
+
+#         scores = scores.cpu().numpy()
+
+#     print("Scores stats:")
+#     print("Min:", scores.min())
+#     print("Max:", scores.max())
+#     print("NaN count:", np.isnan(scores).sum())
+#     print("Inf count:", np.isinf(scores).sum())
+
+#     top_k_idx = np.argsort(scores)[::-1]
+#     seen = get_seen_paintings_explore(user_id)
+
+#     results = []
+#     db_rows = []
+#     rank = 0
+
+#     for idx in top_k_idx:
+#         painting_id = int(image_ids[idx])
+#         score = float(scores[idx])
+
+#         if painting_id in seen:
+#             continue
+
+#         # if score < 0.3:
+#         #     continue
+
+#         results.append({
+#             "painting_id": painting_id,
+#             "score": score
+#         })
+
+#         db_rows.append((
+#             session_id,
+#             user_id,
+#             painting_id,
+#             request_id,
+#             rank,
+#             score,
+#             datetime.utcnow()
+#         ))
+
+#         rank += 1
+#         if rank >= k:
+#             break
+
+#     painting_ids = [r["painting_id"] for r in results]
+#     db_paintings = fetch_paintings(painting_ids)
+#     db_map = {p["painting_id"]: p for p in db_paintings}
+
+#     final_results = []
+#     for r in results:
+#         pid = r["painting_id"]
+#         meta = db_map.get(pid)
+
+#         if not meta:
+#             continue
+
+#         final_results.append({
+#             "painting_id": pid,
+#             "score": r["score"],
+#             "image_url": build_painting_url(meta["image_path"]),
+#             "request_id": request_id
+#         })
+
+#     conn = get_db_connection()
+#     cur = conn.cursor()
+
+#     execute_values(cur, """
+#         INSERT INTO recommendations_sbert (
+#             session_id,
+#             user_id,
+#             painting_id,
+#             request_id,
+#             rank,
+#             score,
+#             created_at
+#         )
+#         VALUES %s
+#     """, db_rows)
+
+#     conn.commit()
+#     cur.close()
+#     conn.close()
+
+#     return jsonify({
+#         "user_id": user_id,
+#         "request_id": request_id,
+#         "recommendations": final_results
+#      })
 
 # CLIP
 # Load CLIP Model and Processor
 print("CLIP device: ", device)
 print("NST Device: ", device_nst)
-
-print("Torch:", torch.__version__)
-print("CUDA:", torch.version.cuda)
-
-print("GPU:", torch.cuda.get_device_name(0))
-print("Capability:", torch.cuda.get_device_capability(0))
-
 print(torch.cuda.is_available())
 model_clip = CLIPModel.from_pretrained("openai/clip-vit-base-patch32", use_safetensors=True).to(device)
 model_clip.eval()
@@ -2600,7 +2538,8 @@ def search_clip():
                 pid,
                 request_id,
                 rank,
-                float(score)
+                float(score),
+                datetime.utcnow()
             ))
 
         if db_rows:
@@ -2611,7 +2550,8 @@ def search_clip():
                     painting_id,
                     request_id,
                     rank,
-                    score
+                    score,
+                    created_at
                 )
                 VALUES %s
             """, db_rows)
