@@ -1,5 +1,6 @@
 let isColdStartPhase = true;
 let isSearchMode = false;
+let isClipRecommendationMode = false;
 
 let searchResultsBuffer = [];
 let userConcepts = [];
@@ -78,11 +79,41 @@ function initRecommendations() {
                         isColdStartPhase = false; // switch to recommendations after first batch
                     }
                 } 
+                else if(isClipRecommendationMode){
+                    console.log("Fetching recommendations using CLIP ...");
+                    const response = await fetch(
+                        window.appPath(`/api/recommend_clip`),
+                        {
+                            method: "POST",
+                            headers: {
+                                "Content-Type": "application/json"
+                            },
+                            body: JSON.stringify({
+                                user_id: parseInt(user_id),
+                                session_id: parseInt(session_id),
+                                k: 10
+                            })
+                        }
+                    );
+
+                    const data = await response.json();
+
+                    if (data.recommendations) {
+
+                        images = data.recommendations;
+                        currentRequestId = data.request_id;
+
+                    } else {
+
+                        console.error("No CLIP recommendations returned");
+                        images = [];
+                    }
+                }
                 
                 // ResNet-50 Recommendations
                 else {
                     if (!hasUserInteracted) {
-                        console.log("Skipping recommender - no interactions yet");
+                        console.log("Skipping recommender, no interactions yet");
                         return [];
                     }
                     console.log("Fetching recommendations using ResNet-50 ...");
@@ -384,6 +415,14 @@ function logInteraction(painting_id, event_type, value = null) {
     .then(res => res.json())
     .then(data => {
         console.log("Server response:", data);
+        hasUserInteracted = true;
+
+        // User interacted with search results
+        if (isSearchMode) {
+            console.log("Switching from Search to CLIP recommendations...");
+            isSearchMode = false;
+            isClipRecommendationMode = true;
+        }
     })
     .catch(err => {
         console.error("Logging error:", err);

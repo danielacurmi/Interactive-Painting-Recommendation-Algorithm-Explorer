@@ -2483,6 +2483,59 @@ def fetch_paintings(painting_ids):
 
     return rows
 
+def build_clip_user_profile(
+    interactions,
+    image_matrix,
+    id_to_idx
+):
+
+    dim = image_matrix.shape[1]
+
+    positive_profile = np.zeros(dim)
+    negative_profile = np.zeros(dim)
+
+    pos_weight = 0.0
+    neg_weight = 0.0
+
+    for interaction in interactions:
+
+        pid = interaction["painting_id"]
+        w = interaction["weight"]
+
+        if abs(w) < 0.1:
+            continue
+
+        if pid not in id_to_idx:
+            continue
+
+        idx = id_to_idx[pid]
+
+        vec = image_matrix[idx]
+
+        if w > 0:
+
+            positive_profile += w * vec
+            pos_weight += w
+
+        else:
+
+            negative_profile += abs(w) * vec
+            neg_weight += abs(w)
+
+    if pos_weight > 0:
+        positive_profile /= pos_weight
+        positive_profile /= (
+            np.linalg.norm(positive_profile) + 1e-8
+        )
+
+    if neg_weight > 0:
+        negative_profile /= neg_weight
+        negative_profile /= (
+            np.linalg.norm(negative_profile) + 1e-8
+        )
+
+    return positive_profile, negative_profile
+
 @app.route("/api/search_clip", methods=["POST"])
 def search_clip():
     try:
@@ -2509,7 +2562,7 @@ def search_clip():
         """, (user_id, session_id, query_text))
 
         query_id = cur.fetchone()[0]
-        top_k_idx, scores = hybrid_retrieve(query_text, top_k=50)
+        top_k_idx, scores = hybrid_retrieve(query_text, top_k=30)
 
         painting_ids = top_k_idx.tolist()
         scores = scores.flatten().tolist()
@@ -2573,6 +2626,231 @@ def search_clip():
             "success": False,
             "error": str(e)
         }), 500
+
+@app.route("/api/recommend_clip", methods=["POST"])
+def recommend_clip():
+
+    try:
+        data = request.get_json()
+
+        user_id = data.get("user_id")
+        session_id = data.get("session_id")
+
+        if not user_id or not session_id:
+            return jsonify({
+                "success": False,
+                "error": "Missing user_id or session_id"
+            }), 400
+
+        k = data.get("k", 10)
+        request_id = generate_request_id()
+
+        # Fetch interactions
+        interactions = fetch_user_interactions(user_id)
+
+        for interaction in interactions:
+            interaction["weight"] = compute_interaction_weight(interaction)
+
+        # Build positive / negative CLIP profiles
+        embedding_dim = image_matrix.shape[1]
+
+        positive_profile = np.zeros(embedding_dim, dtype=np.float32)
+        negative_profile = np.zeros(embedding_dim, dtype=np.float32)
+
+        positive_weight = 0.0
+        negative_weight = 0.0
+
+        for interaction in interactions:
+
+            pid = interaction["painting_id"]
+            weight = interaction["weight"]
+
+            # Ignore weak signals
+            if abs(weight) < 0.1:
+                continue
+
+            if pid not in painting_id_to_index:
+                continue
+
+            idx = painting_id_to_index[pid]
+
+            # CLIP image embedding
+            vec = image_matrix[idx]
+
+            # Positive feedback
+            if weight > 0:
+
+                positive_profile += weight * vec
+                positive_weight += weight
+
+            # Negative feedback
+            else:
+
+                negative_profile += abs(weight) * vec
+                negative_weight += abs(weight)
+
+        # Validate profile existence
+        if positive_weight == 0 and negative_weight == 0:
+            return jsonify({
+                "success": False,
+                "error": "No interaction signal available"
+            }), 200
+
+        # Normalize profiles
+        if positive_weight > 0:
+
+            positive_profile /= positive_weight
+
+            positive_profile /= (
+                np.linalg.norm(positive_profile) + 1e-8
+            )
+
+        if negative_weight > 0:
+
+            negative_profile /= negative_weight
+
+            negative_profile /= (
+                np.linalg.norm(negative_profile) + 1e-8
+            )
+
+        # Similarity scoring
+        positive_scores = np.zeros(len(image_matrix))
+        negative_scores = np.zeros(len(image_matrix))
+
+        if positive_weight > 0:
+            positive_scores = image_matrix @ positive_profile
+
+        if negative_weight > 0:
+            negative_scores = image_matrix @ negative_profile
+
+        # Final ranking score
+        scores = positive_scores - (0.5 * negative_scores)
+
+        # Normalize scores to [0,1]
+        min_score = scores.min()
+        max_score = scores.max()
+
+        if max_score > min_score:
+            scores = (
+                (scores - min_score)
+                / (max_score - min_score)
+            )
+
+        # Remove already seen paintings
+        seen = get_seen_paintings_explore(user_id)
+
+        ranked_indices = np.argsort(scores)[::-1]
+
+        results = []
+        db_rows = []
+
+        rank = 0
+
+        for idx in ranked_indices:
+
+            painting_id = int(image_ids[idx])
+            score = float(scores[idx])
+
+            # Skip previously interacted paintings
+            if painting_id in seen:
+                continue
+
+            # Optional threshold
+            if score < 0.05:
+                continue
+
+            results.append({
+                "painting_id": painting_id,
+                "score": score
+            })
+
+            db_rows.append((
+                session_id,
+                user_id,
+                painting_id,
+                request_id,
+                rank,
+                score,
+                datetime.utcnow()
+            ))
+
+            rank += 1
+
+            if rank >= k:
+                break
+
+        # Fetch painting metadata
+        painting_ids = [
+            r["painting_id"]
+            for r in results
+        ]
+
+        db_paintings = fetch_paintings(painting_ids)
+
+        db_map = {
+            p["painting_id"]: p
+            for p in db_paintings
+        }
+
+        final_results = []
+
+        for r in results:
+
+            pid = r["painting_id"]
+
+            meta = db_map.get(pid)
+
+            if not meta:
+                continue
+
+            final_results.append({
+                "painting_id": pid,
+                "score": r["score"],
+                "image_url": build_painting_url(
+                    meta["image_path"]
+                ),
+                "request_id": request_id
+            })
+
+        # Store recommendations
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        if db_rows:
+
+            execute_values(cur, """
+                INSERT INTO recommendations_clip (
+                    session_id,
+                    user_id,
+                    painting_id,
+                    request_id,
+                    rank,
+                    score,
+                    created_at
+                )
+                VALUES %s
+            """, db_rows)
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        return jsonify({
+            "success": True,
+            "user_id": user_id,
+            "request_id": request_id,
+            "recommendations": final_results
+        })
+
+    except Exception as e:
+
+        print("recommend_clip ERROR:", str(e))
+
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+    
 
 # TO-RUN: python app.py
 if __name__ == "__main__":
