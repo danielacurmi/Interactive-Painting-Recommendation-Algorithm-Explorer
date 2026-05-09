@@ -432,12 +432,6 @@ function logInteraction(painting_id, event_type, value = null) {
             isSearchMode = false;
             isClipRecommendationMode = true;
 
-            // Clear old search results
-            const container = document.getElementById('container');
-            container
-                .querySelectorAll('.col')
-                .forEach(col => col.innerHTML = "");
-
             // Trigger recommendation fetch
             await window.loadImages();
         }

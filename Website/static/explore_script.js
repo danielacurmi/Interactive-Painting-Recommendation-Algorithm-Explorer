@@ -1,9 +1,11 @@
 let isColdStartPhase = true;
+let isSearchMode = false;
+let isClipRecommendationMode = false;
+
+let searchResultsBuffer = [];
 let userConcepts = [];
 const requestIdByPainting = {};
 let hasUserInteracted = false;
-let isSearchMode = false;
-let searchResultsBuffer = [];
 
 document.addEventListener("DOMContentLoaded", async () => {
     await checkUser();
@@ -34,10 +36,14 @@ function initRecommendations() {
                     if (images.length > 0) {
                         currentRequestId = images[0].request_id;
                     }
+
                     searchResultsBuffer = [];
+                    fetching = false;
+
                     return images.map(img => {
                         const id = img.painting_id;
-                        requestIdByPainting[id] = img.request_id || currentRequestId;
+                        requestIdByPainting[id] =
+                            img.request_id || currentRequestId;
                         return {
                             id: id,
                             url: img.image_url
@@ -91,7 +97,6 @@ function initRecommendations() {
                     });
 
                     const data = await response.json();
-
                     if (data.recommendations) {
                         images = data.recommendations;
                         currentRequestId = data.request_id;
@@ -105,7 +110,6 @@ function initRecommendations() {
             }
 
             fetching = false;
-
             return images.map(img => {
                 const id = img.painting_id;
                 requestIdByPainting[id] = img.request_id || currentRequestId;
@@ -202,7 +206,7 @@ function initRecommendations() {
                     });
 
                     setField(title, data.title);
-                    setField(artist, data.artist?.name_surname);
+                    setField(artist, data.artist?.artist);
 
                     setField(
                         artistBirth,
@@ -369,8 +373,22 @@ function logInteraction(painting_id, event_type, value = null) {
         body: JSON.stringify(payload)
     })
     .then(res => res.json())
-    .then(data => {
+    .then(async data => {
         console.log("Server response:", data);
+        hasUserInteracted = true;
+
+        // User interacted with search results
+        if (isSearchMode) {
+            console.log(
+                "Switching from Search to CLIP recommendations..."
+            );
+
+            isSearchMode = false;
+            isClipRecommendationMode = true;
+
+            // Trigger recommendation fetch
+            await window.loadImages();
+        }
     })
     .catch(err => {
         console.error("Logging error:", err);
