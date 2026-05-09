@@ -586,6 +586,99 @@ def fetch_user_interactions(user_id):
 
     return interactions
 
+def fetch_clip_user_interactions(user_id):
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("""
+        SELECT
+            r.painting_id,
+            r.rank,
+            r.request_id,
+
+            MAX(s.viewing_time_seconds) AS viewing_time,
+            MAX(s.rating) AS rating,
+
+            BOOL_OR(s.favourite) AS favourite,
+            BOOL_OR(s.not_interested) AS not_interested,
+            BOOL_OR(s.save_to_gallary) AS save_to_gallery,
+            BOOL_OR(s.click) AS click,
+
+            MAX(s.review) AS review,
+
+            MAX(r.created_at) AS interaction_time,
+
+            CASE
+                WHEN r.request_id IN (
+                    SELECT DISTINCT r1.request_id
+                    FROM recommendations_clip r1
+                    WHERE EXISTS (
+                        SELECT 1
+                        FROM recommendations_clip r2
+                        WHERE r2.user_id = r1.user_id
+                        AND r2.created_at > r1.created_at
+                    )
+                )
+
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM interaction_summary s2
+                    WHERE s2.request_id = r.request_id
+                    AND s2.painting_id = r.painting_id
+                    AND (
+                        s2.click = TRUE
+                        OR s2.favourite = TRUE
+                        OR s2.rating IS NOT NULL
+                        OR s2.viewing_time_seconds > 2
+                    )
+                )
+
+                THEN TRUE
+                ELSE FALSE
+            END AS skip
+
+        FROM recommendations_clip r
+
+        LEFT JOIN interaction_summary s
+            ON r.painting_id = s.painting_id
+            AND r.user_id = s.user_id
+            AND r.request_id = s.request_id
+
+        WHERE r.user_id = %s
+
+        GROUP BY
+            r.painting_id,
+            r.request_id,
+            r.rank
+
+    """, (user_id,))
+
+    rows = cur.fetchall()
+
+    cur.close()
+    conn.close()
+
+    interactions = []
+
+    for r in rows:
+
+        interactions.append({
+
+            "painting_id": r["painting_id"],
+            "request_id": r["request_id"],
+            "rank": r["rank"],
+            "viewing_time": r["viewing_time"],
+            "rating": r["rating"],
+            "favourite": r["favourite"],
+            "not_interested": r["not_interested"],
+            "save_to_gallery": r["save_to_gallery"],
+            "click": r["click"],
+            "review": r["review"],
+            "skip": r["skip"],
+            "interaction_time": r["interaction_time"]
+        })
+
+    return interactions
+
 # Get painting and artist metadata for each painting along with the image from the respective file path
 @app.route("/api/random-images/<int:n>")
 def random_images(n):
@@ -2677,8 +2770,7 @@ def recommend_clip():
         request_id = generate_request_id()
 
         # Fetch interactions
-        interactions = fetch_user_interactions(user_id)
-
+        interactions = fetch_clip_user_interactions(user_id)
         for interaction in interactions:
             interaction["weight"] = compute_interaction_weight(interaction)
 
