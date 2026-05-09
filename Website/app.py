@@ -2483,25 +2483,26 @@ def fetch_paintings(painting_ids):
 
     return rows
 
-def build_clip_user_profile(
-    interactions,
-    image_matrix,
-    id_to_idx
-):
+def build_clip_user_profile(interactions, image_matrix, text_matrix, id_to_idx):
+    image_dim = image_matrix.shape[1]
+    text_dim = text_matrix.shape[1]
 
-    dim = image_matrix.shape[1]
+    # Image profiles
+    positive_image_profile = np.zeros(image_dim, dtype=np.float32)
+    negative_image_profile = np.zeros(image_dim, dtype=np.float32)
 
-    positive_profile = np.zeros(dim)
-    negative_profile = np.zeros(dim)
+    # Text profiles
+    positive_text_profile = np.zeros(text_dim, dtype=np.float32)
+    negative_text_profile = np.zeros(text_dim, dtype=np.float32)
 
-    pos_weight = 0.0
-    neg_weight = 0.0
+    positive_weight = 0.0
+    negative_weight = 0.0
 
     for interaction in interactions:
-
         pid = interaction["painting_id"]
         w = interaction["weight"]
 
+        # Ignore weak signals
         if abs(w) < 0.1:
             continue
 
@@ -2509,32 +2510,62 @@ def build_clip_user_profile(
             continue
 
         idx = id_to_idx[pid]
+        image_vec = image_matrix[idx]
+        text_vec = text_matrix[idx]
 
-        vec = image_matrix[idx]
-
+        # Positive
         if w > 0:
+            positive_image_profile += w * image_vec
+            positive_text_profile += w * text_vec
+            positive_weight += w
 
-            positive_profile += w * vec
-            pos_weight += w
-
+        # Negative
         else:
+            negative_image_profile += abs(w) * image_vec
+            negative_text_profile += abs(w) * text_vec
+            negative_weight += abs(w)
 
-            negative_profile += abs(w) * vec
-            neg_weight += abs(w)
+    # Normalize positive profiles
+    if positive_weight > 0:
+        positive_image_profile /= positive_weight
+        positive_text_profile /= positive_weight
 
-    if pos_weight > 0:
-        positive_profile /= pos_weight
-        positive_profile /= (
-            np.linalg.norm(positive_profile) + 1e-8
-        )
+        positive_image_profile /= (np.linalg.norm(positive_image_profile) + 1e-8)
+        positive_text_profile /= (np.linalg.norm(positive_text_profile) + 1e-8)
 
-    if neg_weight > 0:
-        negative_profile /= neg_weight
-        negative_profile /= (
-            np.linalg.norm(negative_profile) + 1e-8
-        )
+    # Normalize negative profiles
+    if negative_weight > 0:
+        negative_image_profile /= negative_weight
+        negative_text_profile /= negative_weight
 
-    return positive_profile, negative_profile
+        negative_image_profile /= (np.linalg.norm(negative_image_profile) + 1e-8)
+        negative_text_profile /= (np.linalg.norm(negative_text_profile) + 1e-8)
+
+    return {
+        "positive_image": positive_image_profile,
+        "negative_image": negative_image_profile,
+        "positive_text": positive_text_profile,
+        "negative_text": negative_text_profile,
+        "positive_weight": positive_weight,
+        "negative_weight": negative_weight
+    }
+
+def get_seen_paintings_search(user_id, session_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT DISTINCT painting_id
+        FROM recommendations_clip
+        WHERE user_id = %s
+            AND session_id = %s
+    """, (user_id, session_id))
+
+    seen = {row[0] for row in cur.fetchall()}
+
+    cur.close()
+    conn.close()
+    return seen
 
 @app.route("/api/search_clip", methods=["POST"])
 def search_clip():
@@ -2651,94 +2682,56 @@ def recommend_clip():
         for interaction in interactions:
             interaction["weight"] = compute_interaction_weight(interaction)
 
-        # Build positive / negative CLIP profiles
-        embedding_dim = image_matrix.shape[1]
+        # Build CLIP user profiles
+        profiles = build_clip_user_profile(interactions, image_matrix, text_matrix, painting_id_to_index)
 
-        positive_profile = np.zeros(embedding_dim, dtype=np.float32)
-        negative_profile = np.zeros(embedding_dim, dtype=np.float32)
-
-        positive_weight = 0.0
-        negative_weight = 0.0
-
-        for interaction in interactions:
-
-            pid = interaction["painting_id"]
-            weight = interaction["weight"]
-
-            # Ignore weak signals
-            if abs(weight) < 0.1:
-                continue
-
-            if pid not in painting_id_to_index:
-                continue
-
-            idx = painting_id_to_index[pid]
-
-            # CLIP image embedding
-            vec = image_matrix[idx]
-
-            # Positive feedback
-            if weight > 0:
-
-                positive_profile += weight * vec
-                positive_weight += weight
-
-            # Negative feedback
-            else:
-
-                negative_profile += abs(weight) * vec
-                negative_weight += abs(weight)
-
-        # Validate profile existence
-        if positive_weight == 0 and negative_weight == 0:
+        # Validate interaction signal
+        if (
+            profiles["positive_weight"] == 0
+            and profiles["negative_weight"] == 0
+        ):
             return jsonify({
                 "success": False,
                 "error": "No interaction signal available"
             }), 200
 
-        # Normalize profiles
-        if positive_weight > 0:
+        # IMAGE SIMILARITIES
+        image_positive_scores = np.zeros(len(image_matrix))
+        image_negative_scores = np.zeros(len(image_matrix))
 
-            positive_profile /= positive_weight
+        if profiles["positive_weight"] > 0:
+            image_positive_scores = (image_matrix @ profiles["positive_image"])
 
-            positive_profile /= (
-                np.linalg.norm(positive_profile) + 1e-8
-            )
+        if profiles["negative_weight"] > 0:
+            image_negative_scores = (image_matrix @ profiles["negative_image"])
 
-        if negative_weight > 0:
+        image_scores = (image_positive_scores - 0.5 * image_negative_scores)
 
-            negative_profile /= negative_weight
+        # TEXT SIMILARITIES
+        text_positive_scores = np.zeros(len(text_matrix))
+        text_negative_scores = np.zeros(len(text_matrix))
 
-            negative_profile /= (
-                np.linalg.norm(negative_profile) + 1e-8
-            )
+        if profiles["positive_weight"] > 0:
+            text_positive_scores = (text_matrix @ profiles["positive_text"])
 
-        # Similarity scoring
-        positive_scores = np.zeros(len(image_matrix))
-        negative_scores = np.zeros(len(image_matrix))
+        if profiles["negative_weight"] > 0:
+            text_negative_scores = (text_matrix @ profiles["negative_text"])
 
-        if positive_weight > 0:
-            positive_scores = image_matrix @ positive_profile
+        text_scores = (text_positive_scores - 0.5 * text_negative_scores)
 
-        if negative_weight > 0:
-            negative_scores = image_matrix @ negative_profile
+        # HYBRID FUSION
+        alpha = 0.6
+        scores = (alpha * image_scores + (1 - alpha) * text_scores)
 
-        # Final ranking score
-        scores = positive_scores - (0.5 * negative_scores)
-
-        # Normalize scores to [0,1]
+        # Normalize
         min_score = scores.min()
         max_score = scores.max()
 
         if max_score > min_score:
-            scores = (
-                (scores - min_score)
-                / (max_score - min_score)
-            )
+            scores = ((scores - min_score) / (max_score - min_score))
 
         # Remove already seen paintings
-        seen = get_seen_paintings_explore(user_id)
-
+        seen = get_seen_paintings_search(user_id, session_id)
         ranked_indices = np.argsort(scores)[::-1]
 
         results = []
@@ -2793,7 +2786,6 @@ def recommend_clip():
         }
 
         final_results = []
-
         for r in results:
 
             pid = r["painting_id"]

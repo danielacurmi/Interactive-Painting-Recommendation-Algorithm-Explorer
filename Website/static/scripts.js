@@ -36,10 +36,14 @@ function initRecommendations() {
                     if (images.length > 0) {
                         currentRequestId = images[0].request_id;
                     }
+
                     searchResultsBuffer = [];
+                    fetching = false;
+
                     return images.map(img => {
                         const id = img.painting_id;
-                        requestIdByPainting[id] = img.request_id || currentRequestId;
+                        requestIdByPainting[id] =
+                            img.request_id || currentRequestId;
                         return {
                             id: id,
                             url: img.image_url
@@ -95,6 +99,8 @@ function initRecommendations() {
                             })
                         }
                     );
+
+                    console.log(response)
 
                     const data = await response.json();
 
@@ -413,15 +419,27 @@ function logInteraction(painting_id, event_type, value = null) {
         body: JSON.stringify(payload)
     })
     .then(res => res.json())
-    .then(data => {
+    .then(async data => {
         console.log("Server response:", data);
         hasUserInteracted = true;
 
         // User interacted with search results
         if (isSearchMode) {
-            console.log("Switching from Search to CLIP recommendations...");
+            console.log(
+                "Switching from Search to CLIP recommendations..."
+            );
+
             isSearchMode = false;
             isClipRecommendationMode = true;
+
+            // Clear old search results
+            const container = document.getElementById('container');
+            container
+                .querySelectorAll('.col')
+                .forEach(col => col.innerHTML = "");
+
+            // Trigger recommendation fetch
+            await window.loadImages();
         }
     })
     .catch(err => {
