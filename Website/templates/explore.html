@@ -20,7 +20,6 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fascinate&family=UnifrakturMaguntia&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
     <link href="https://fonts.cdnfonts.com/css/old-london" rel="stylesheet">
 
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
@@ -61,6 +60,13 @@
     </div>
     <div class="board-nav">
         <input type="text" id="searchBar" placeholder="Search a painting description...">
+        <div id="info">
+            <i class="fa fa-info-circle"></i>
+            <span class="tooltip-text">
+                By using this search functionality, a set of paintings will be retrieved using another recommendation engine using th CLIP model to represent paintings. 
+                After interacting with some of the paintings retreived, a set of recommendations will be retrieved based soley on the interactions made with the search results.
+            </span>
+        </div>
     </div>
     <div class="modal-overlay" id="modalOverlay">
         <div class="modal">

@@ -135,7 +135,7 @@ function initRecommendations() {
                         body: JSON.stringify({
                             user_id: parseInt(user_id),
                             session_id: parseInt(session_id),
-                            k: 30
+                            k: 10
                         })
                     });
 
@@ -695,7 +695,7 @@ async function handleSearchInput(event) {
                     session_id: parseInt(localStorage.getItem("session_id")),
                     request_id: crypto.randomUUID(),
                     query_text: query,
-                    top_k: 20
+                    top_k: 25
                 })
             });
 

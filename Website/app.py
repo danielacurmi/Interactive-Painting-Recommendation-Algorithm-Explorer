@@ -1918,19 +1918,7 @@ def generate_concept_thumbnail(concept_type, label):
         conn.close()
 
 # User-Profile Creation
-
 # Create a weighted user profile vector based on interactions or cold start if new user
-# INTERACTION_WEIGHTS = {
-#     "rating": 2.0,
-#     "review": 0.5,
-#     "favourite": 3.0,
-#     "save_to_gallery": 2.0,
-#     "not_interested": 3.0,
-#     "viewing_time": 1.0,
-#     "click": 0.5,
-#     "skip": 2.0
-# }
-
 DEFAULT_INTERACTION_WEIGHTS = {
     "rating": 1.0,
     "review": 1.0,
@@ -1951,17 +1939,13 @@ def normalise_viewing_time(viewing_time):
     if viewing_time is None:
         return 0.0
 
-    return min(
-        np.log1p(viewing_time) / np.log(60),
-        1.0
-    )
+    return min(np.log1p(viewing_time) / np.log(60),  1.0)
 
 def normalise_skip(interaction):
     if not interaction.get("skip"):
         return 0.0
 
     rank = interaction.get("rank", 10)
-
     return rank_discount(rank)
 
 def extract_interaction_signals(interaction):
@@ -2001,9 +1985,9 @@ def apply_temporal_decay(weight, interaction_time):
 
 def compute_interaction_weight(interaction, weights):
     signals = extract_interaction_signals(interaction)
-
     weight = 0.0
 
+    # Implicit and Explicit Feedback 
     # Positive signals
     weight += signals["rating"] * weights["rating"]
     weight += signals["favourite"] * weights["favourite"]
@@ -2017,63 +2001,13 @@ def compute_interaction_weight(interaction, weights):
     # Contextual signal
     weight += signals["viewing_time"] * weights["viewing_time"]
 
+    # Temporal Decay to give importance to newer interactions 
     interaction_time = interaction.get("interaction_time")
     weight = apply_temporal_decay(weight, interaction_time)
 
     return weight
 
-# def compute_interaction_weight(interaction):
-#     """
-#     Compute weight from a single interaction record
-#     interaction: dict containing both implicit and/or explicit user feedback
-#     """
-#     weight = 0.0
-
-#     # Explicit Feedback with high signal since it's more indicative of user preferences
-#     rating = interaction.get("rating")
-#     if rating is not None:
-#         if rating >= 3:
-#             weight += INTERACTION_WEIGHTS["rating"] * (rating / 5.0)
-#         elif rating <= 2:
-#             weight -= INTERACTION_WEIGHTS["rating"] * (1 - rating / 5.0)
-
-#     if interaction.get("favourite"):
-#         weight += abs(INTERACTION_WEIGHTS["favourite"])
-
-#     if interaction.get("not_interested"):
-#         weight -= abs(INTERACTION_WEIGHTS["not_interested"])
-
-#     if interaction.get("review"):
-#         weight += abs(INTERACTION_WEIGHTS["review"])
-
-#     # if interaction.get("save_to_gallery"):
-#     #     weight += abs(INTERACTION_WEIGHTS["save_to_gallery"])
-
-#     # Implicit Feedback has a lower signal since it's relatively weak
-#     # only reward clicks if not disliked
-#     if (interaction.get("click") and not interaction.get("not_interested")):
-#         weight += abs(INTERACTION_WEIGHTS["click"])
-
-#     viewing_time = interaction.get("viewing_time")
-#     if (viewing_time is not None and not interaction.get("not_interested")):
-#         norm_time = np.log1p(viewing_time) / np.log(60)
-#         norm_time = min(norm_time, 1.0)
-#         weight += abs(INTERACTION_WEIGHTS["viewing_time"] * norm_time)
-
-#     # Skip is a derived negative interaction
-#     if interaction.get("skip"):
-#         rank = interaction.get("rank", 10)  
-#         discount = rank_discount(rank)
-#         weight -= abs(INTERACTION_WEIGHTS["skip"] * discount)
-
-#     # Temporal Decay to give importance to newer interactions 
-#     interaction_time = interaction.get("interaction_time")
-#     decay = temporal_decay(interaction_time)
-#     weight *= decay
-
-#     return weight
-
-# ResNet50/VGG-19
+# ResNet50
 # Preprocess images the same way as they were trained on ImageNet
 transform = transforms.Compose([
     transforms.Resize((224, 224)),
@@ -2512,25 +2446,6 @@ def recommend_sbert():
         })
 
 
-# @app.route("/api/recommend_sbert", methods=["POST"])
-# def recommend_sbert():
-#     data = request.json
-#     user_id = data["user_id"]
-#     session_id = data.get("session_id")
-
-#     if not user_id or not session_id:
-#         return jsonify({
-#             "success": False,
-#             "error": "Missing user_id or session_id"
-#         }), 400
-
-#     k = data.get("k", 10)
-#     request_id = generate_request_id()
-
-#     interactions = fetch_user_interactions(user_id)
-#     for i in interactions:
-#         i["weight"] = compute_interaction_weight(i, DEFAULT_INTERACTION_WEIGHTS)
-
 #     with torch.no_grad():
 #         field_scores = {}
 
@@ -2587,93 +2502,9 @@ def recommend_sbert():
 #         )
 
 #         scores = scores.cpu().numpy()
-
-#     print("Scores stats:")
-#     print("Min:", scores.min())
-#     print("Max:", scores.max())
-#     print("NaN count:", np.isnan(scores).sum())
-#     print("Inf count:", np.isinf(scores).sum())
-
 #     top_k_idx = np.argsort(scores)[::-1]
 #     seen = get_seen_paintings_explore(user_id)
 
-#     results = []
-#     db_rows = []
-#     rank = 0
-
-#     for idx in top_k_idx:
-#         painting_id = int(image_ids[idx])
-#         score = float(scores[idx])
-
-#         if painting_id in seen:
-#             continue
-
-#         # if score < 0.3:
-#         #     continue
-
-#         results.append({
-#             "painting_id": painting_id,
-#             "score": score
-#         })
-
-#         db_rows.append((
-#             session_id,
-#             user_id,
-#             painting_id,
-#             request_id,
-#             rank,
-#             score,
-#             datetime.utcnow()
-#         ))
-
-#         rank += 1
-#         if rank >= k:
-#             break
-
-#     painting_ids = [r["painting_id"] for r in results]
-#     db_paintings = fetch_paintings(painting_ids)
-#     db_map = {p["painting_id"]: p for p in db_paintings}
-
-#     final_results = []
-#     for r in results:
-#         pid = r["painting_id"]
-#         meta = db_map.get(pid)
-
-#         if not meta:
-#             continue
-
-#         final_results.append({
-#             "painting_id": pid,
-#             "score": r["score"],
-#             "image_url": build_painting_url(meta["image_path"]),
-#             "request_id": request_id
-#         })
-
-#     conn = get_db_connection()
-#     cur = conn.cursor()
-
-#     execute_values(cur, """
-#         INSERT INTO recommendations_sbert (
-#             session_id,
-#             user_id,
-#             painting_id,
-#             request_id,
-#             rank,
-#             score,
-#             created_at
-#         )
-#         VALUES %s
-#     """, db_rows)
-
-#     conn.commit()
-#     cur.close()
-#     conn.close()
-
-#     return jsonify({
-#         "user_id": user_id,
-#         "request_id": request_id,
-#         "recommendations": final_results
-#      })
 
 # CLIP
 # Load CLIP Model and Processor
@@ -2940,7 +2771,6 @@ def search_clip():
 
 @app.route("/api/recommend_clip", methods=["POST"])
 def recommend_clip():
-
     try:
         data = request.get_json()
 
@@ -2998,7 +2828,7 @@ def recommend_clip():
 
         text_scores = (text_positive_scores - 0.5 * text_negative_scores)
 
-        # HYBRID FUSION
+        # Hybrid fusion of text and image scores
         alpha = 0.6
         scores = (alpha * image_scores + (1 - alpha) * text_scores)
 
