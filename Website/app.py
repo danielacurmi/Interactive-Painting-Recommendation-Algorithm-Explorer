@@ -679,6 +679,99 @@ def fetch_clip_user_interactions(user_id):
 
     return interactions
 
+def fetch_sbert_user_interactions(user_id):
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("""
+        SELECT
+            r.painting_id,
+            r.rank,
+            r.request_id,
+
+            MAX(s.viewing_time_seconds) AS viewing_time,
+            MAX(s.rating) AS rating,
+
+            BOOL_OR(s.favourite) AS favourite,
+            BOOL_OR(s.not_interested) AS not_interested,
+            BOOL_OR(s.save_to_gallary) AS save_to_gallery,
+            BOOL_OR(s.click) AS click,
+
+            MAX(s.review) AS review,
+
+            MAX(r.created_at) AS interaction_time,
+
+            CASE
+                WHEN r.request_id IN (
+                    SELECT DISTINCT r1.request_id
+                    FROM recommendations_sbert r1
+                    WHERE EXISTS (
+                        SELECT 1
+                        FROM recommendations_sbert r2
+                        WHERE r2.user_id = r1.user_id
+                        AND r2.created_at > r1.created_at
+                    )
+                )
+
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM interaction_summary s2
+                    WHERE s2.request_id = r.request_id
+                    AND s2.painting_id = r.painting_id
+                    AND (
+                        s2.click = TRUE
+                        OR s2.favourite = TRUE
+                        OR s2.rating IS NOT NULL
+                        OR s2.viewing_time_seconds > 2
+                    )
+                )
+
+                THEN TRUE
+                ELSE FALSE
+            END AS skip
+
+        FROM recommendations_sbert r
+
+        LEFT JOIN interaction_summary s
+            ON r.painting_id = s.painting_id
+            AND r.user_id = s.user_id
+            AND r.request_id = s.request_id
+
+        WHERE r.user_id = %s
+
+        GROUP BY
+            r.painting_id,
+            r.request_id,
+            r.rank
+
+    """, (user_id,))
+
+    rows = cur.fetchall()
+
+    cur.close()
+    conn.close()
+
+    interactions = []
+
+    for r in rows:
+
+        interactions.append({
+
+            "painting_id": r["painting_id"],
+            "request_id": r["request_id"],
+            "rank": r["rank"],
+            "viewing_time": r["viewing_time"],
+            "rating": r["rating"],
+            "favourite": r["favourite"],
+            "not_interested": r["not_interested"],
+            "save_to_gallery": r["save_to_gallery"],
+            "click": r["click"],
+            "review": r["review"],
+            "skip": r["skip"],
+            "interaction_time": r["interaction_time"]
+        })
+
+    return interactions
+
 # Get painting and artist metadata for each painting along with the image from the respective file path
 @app.route("/api/random-images/<int:n>")
 def random_images(n):
@@ -1825,19 +1918,62 @@ def generate_concept_thumbnail(concept_type, label):
         conn.close()
 
 # User-Profile Creation
-# TO-DO: user can rank which are most imp to see how results change
-# Have a normalised wieght value
+
 # Create a weighted user profile vector based on interactions or cold start if new user
-INTERACTION_WEIGHTS = {
-    "rating": 2.0,
-    "review": 0.5,
-    "favourite": 3.0,
-    "not_interested": 3.0,
-    "save_to_gallery": 2.0,
+# INTERACTION_WEIGHTS = {
+#     "rating": 2.0,
+#     "review": 0.5,
+#     "favourite": 3.0,
+#     "save_to_gallery": 2.0,
+#     "not_interested": 3.0,
+#     "viewing_time": 1.0,
+#     "click": 0.5,
+#     "skip": 2.0
+# }
+
+DEFAULT_INTERACTION_WEIGHTS = {
+    "rating": 1.0,
+    "review": 1.0,
+    "favourite": 1.0,
+    "not_interested": 1.0,
     "viewing_time": 1.0,
-    "click": 0.5,
-    "skip": 2.0
+    "click": 1.0,
+    "skip": 1.0
 }
+
+def normalise_rating(rating):
+    if rating is None:
+        return 0.0
+
+    return (rating - 3) / 2
+
+def normalise_viewing_time(viewing_time):
+    if viewing_time is None:
+        return 0.0
+
+    return min(
+        np.log1p(viewing_time) / np.log(60),
+        1.0
+    )
+
+def normalise_skip(interaction):
+    if not interaction.get("skip"):
+        return 0.0
+
+    rank = interaction.get("rank", 10)
+
+    return rank_discount(rank)
+
+def extract_interaction_signals(interaction):
+    return {
+        "rating": normalise_rating(interaction.get("rating")),
+        "favourite": 1.0 if interaction.get("favourite") else 0.0,
+        "not_interested": 1.0 if interaction.get("not_interested") else 0.0,
+        "review": 1.0 if interaction.get("review") else 0.0,
+        "click": 1.0 if interaction.get("click") else 0.0,
+        "viewing_time": normalise_viewing_time(interaction.get("viewing_time")),
+        "skip": normalise_skip(interaction)
+    }
 
 def rank_discount(rank):
     return 1.0 / np.log2(rank + 2)
@@ -1859,56 +1995,83 @@ def temporal_decay(interaction_time, decay_lambda=0.03):
 
     return decay
 
-def compute_interaction_weight(interaction):
-    """
-    Compute weight from a single interaction record
-    interaction: dict containing both implicit and/or explicit user feedback
-    """
+def apply_temporal_decay(weight, interaction_time):
+    decay = temporal_decay(interaction_time)
+    return weight * decay
+
+def compute_interaction_weight(interaction, weights):
+    signals = extract_interaction_signals(interaction)
+
     weight = 0.0
 
-    # Explicit Feedback with high signal since it's more indicative of user preferences
-    rating = interaction.get("rating")
-    if rating is not None:
-        if rating >= 3:
-            weight += INTERACTION_WEIGHTS["rating"] * (rating / 5.0)
-        elif rating <= 2:
-            weight -= INTERACTION_WEIGHTS["rating"] * (1 - rating / 5.0)
+    # Positive signals
+    weight += signals["rating"] * weights["rating"]
+    weight += signals["favourite"] * weights["favourite"]
+    weight += signals["review"] * weights["review"]
+    weight += signals["click"] * weights["click"]
 
-    if interaction.get("favourite"):
-        weight += abs(INTERACTION_WEIGHTS["favourite"])
+    # Negative signals
+    weight -= signals["not_interested"] * weights["not_interested"]
+    weight -= signals["skip"] * weights["skip"]
 
-    if interaction.get("not_interested"):
-        weight -= abs(INTERACTION_WEIGHTS["not_interested"])
+    # Contextual signal
+    weight += signals["viewing_time"] * weights["viewing_time"]
 
-    if interaction.get("review"):
-        weight += abs(INTERACTION_WEIGHTS["review"])
-
-    if interaction.get("save_to_gallery"):
-        weight += abs(INTERACTION_WEIGHTS["save_to_gallery"])
-
-    # Implicit Feedback has a lower signal since it's relatively weak
-    # only reward clicks if not disliked
-    if (interaction.get("click") and not interaction.get("not_interested")):
-        weight += abs(INTERACTION_WEIGHTS["click"])
-
-    viewing_time = interaction.get("viewing_time")
-    if (viewing_time is not None and not interaction.get("not_interested")):
-        norm_time = np.log1p(viewing_time) / np.log(60)
-        norm_time = min(norm_time, 1.0)
-        weight += abs(INTERACTION_WEIGHTS["viewing_time"] * norm_time)
-
-    # Skip is a derived negative interaction
-    if interaction.get("skip"):
-        rank = interaction.get("rank", 10)  
-        discount = rank_discount(rank)
-        weight -= abs(INTERACTION_WEIGHTS["skip"] * discount)
-
-    # Temporal Decay
     interaction_time = interaction.get("interaction_time")
-    decay = temporal_decay(interaction_time)
-    weight *= decay
+    weight = apply_temporal_decay(weight, interaction_time)
 
     return weight
+
+# def compute_interaction_weight(interaction):
+#     """
+#     Compute weight from a single interaction record
+#     interaction: dict containing both implicit and/or explicit user feedback
+#     """
+#     weight = 0.0
+
+#     # Explicit Feedback with high signal since it's more indicative of user preferences
+#     rating = interaction.get("rating")
+#     if rating is not None:
+#         if rating >= 3:
+#             weight += INTERACTION_WEIGHTS["rating"] * (rating / 5.0)
+#         elif rating <= 2:
+#             weight -= INTERACTION_WEIGHTS["rating"] * (1 - rating / 5.0)
+
+#     if interaction.get("favourite"):
+#         weight += abs(INTERACTION_WEIGHTS["favourite"])
+
+#     if interaction.get("not_interested"):
+#         weight -= abs(INTERACTION_WEIGHTS["not_interested"])
+
+#     if interaction.get("review"):
+#         weight += abs(INTERACTION_WEIGHTS["review"])
+
+#     # if interaction.get("save_to_gallery"):
+#     #     weight += abs(INTERACTION_WEIGHTS["save_to_gallery"])
+
+#     # Implicit Feedback has a lower signal since it's relatively weak
+#     # only reward clicks if not disliked
+#     if (interaction.get("click") and not interaction.get("not_interested")):
+#         weight += abs(INTERACTION_WEIGHTS["click"])
+
+#     viewing_time = interaction.get("viewing_time")
+#     if (viewing_time is not None and not interaction.get("not_interested")):
+#         norm_time = np.log1p(viewing_time) / np.log(60)
+#         norm_time = min(norm_time, 1.0)
+#         weight += abs(INTERACTION_WEIGHTS["viewing_time"] * norm_time)
+
+#     # Skip is a derived negative interaction
+#     if interaction.get("skip"):
+#         rank = interaction.get("rank", 10)  
+#         discount = rank_discount(rank)
+#         weight -= abs(INTERACTION_WEIGHTS["skip"] * discount)
+
+#     # Temporal Decay to give importance to newer interactions 
+#     interaction_time = interaction.get("interaction_time")
+#     decay = temporal_decay(interaction_time)
+#     weight *= decay
+
+#     return weight
 
 # ResNet50/VGG-19
 # Preprocess images the same way as they were trained on ImageNet
@@ -2016,7 +2179,7 @@ def recommend_resnet():
     # Build user scores
     interactions = fetch_user_interactions(user_id)
     for i in interactions:
-        i["weight"] = compute_interaction_weight(i)
+        i["weight"] = compute_interaction_weight(i, DEFAULT_INTERACTION_WEIGHTS)
 
     scores = score_paintings_from_interactions(interactions, resnet_norm, id_to_idx)
 
@@ -2195,10 +2358,10 @@ def recommend_sbert():
         
     k = data.get("k", 10) 
     request_id = generate_request_id() 
-    interactions = fetch_user_interactions(user_id) 
+    interactions = fetch_sbert_user_interactions(user_id) 
     
     for i in interactions: 
-        i["weight"] = compute_interaction_weight(i) 
+        i["weight"] = compute_interaction_weight(i, DEFAULT_INTERACTION_WEIGHTS) 
 
     positive_profiles = {}
     negative_profiles = {}
@@ -2366,7 +2529,7 @@ def recommend_sbert():
 
 #     interactions = fetch_user_interactions(user_id)
 #     for i in interactions:
-#         i["weight"] = compute_interaction_weight(i)
+#         i["weight"] = compute_interaction_weight(i, DEFAULT_INTERACTION_WEIGHTS)
 
 #     with torch.no_grad():
 #         field_scores = {}
@@ -2795,8 +2958,8 @@ def recommend_clip():
 
         # Fetch interactions
         interactions = fetch_clip_user_interactions(user_id)
-        for interaction in interactions:
-            interaction["weight"] = compute_interaction_weight(interaction)
+        for i in interactions:
+            i["weight"] = compute_interaction_weight(i, DEFAULT_INTERACTION_WEIGHTS)
 
         # Build CLIP user profiles
         profiles = build_clip_user_profile(interactions, image_matrix, text_matrix, painting_id_to_index)
