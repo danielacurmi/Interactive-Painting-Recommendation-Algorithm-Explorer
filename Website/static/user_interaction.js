@@ -87,3 +87,55 @@ function endSession() {
     localStorage.removeItem("session_id");
 }
 
+const weightsModal = document.getElementById("weightsModal");
+const openBtn = document.getElementById("userWeights");
+const closeBtn = document.getElementById("closeWeightsModal");
+
+openBtn.addEventListener("click", () => {
+    weightsModal.classList.remove("hidden");
+});
+
+closeBtn.addEventListener("click", () => {
+    weightsModal.classList.add("hidden");
+});
+
+window.addEventListener("click", (e) => {
+    if (e.target === weightsModal) {
+        weightsModal.classList.add("hidden");
+    }
+});
+
+
+const sliders = document.querySelectorAll(".slider-group input");
+sliders.forEach(slider => {
+    const valueLabel =
+        document.getElementById(slider.id + "Value");
+
+    valueLabel.textContent = slider.value;
+    slider.addEventListener("input", () => {
+        valueLabel.textContent = slider.value;
+    });
+});
+
+
+// Save button
+document.getElementById("saveWeightsBtn")
+.addEventListener("click", () => {
+
+    const weights = {
+        rating: parseFloat(document.getElementById("ratingWeight").value),
+        favourite: parseFloat(document.getElementById("favouriteWeight").value),
+        not_interested: parseFloat(document.getElementById("notInterestedWeight").value),
+        viewing_time: parseFloat(document.getElementById("viewingTimeWeight").value),
+        click: parseFloat(document.getElementById("clickWeight").value),
+        review: parseFloat(document.getElementById("reviewWeight").value),
+        skip: parseFloat(document.getElementById("skipWeight").value)
+    };
+
+    console.log("Selected weights:", weights);
+
+    // future:
+    // send to backend API
+
+    weightsModal.classList.add("hidden");
+});
