@@ -967,6 +967,18 @@ def get_gallery():
     ]
     return jsonify(files)
 
+# Track NST progress
+style_transfer_progress = {
+    "current": 0,
+    "total": 300,
+    "percent": 0,
+    "running": False
+}
+
+@app.route('/style-transfer-progress')
+def style_transfer_progress_api():
+    return jsonify(style_transfer_progress)
+
 # folder for saving generated results
 paintings_dir = DATASET_PATH if DATASET_PATH.endswith("paintings") else os.path.join(DATASET_PATH, "paintings")
 GENERATED_DIR = os.path.join(paintings_dir, "AI-Generated Images")
@@ -985,6 +997,11 @@ def style_transfer_api():
     output_filename = f"styled_{timestamp}.jpg"
     output_path = os.path.join(GENERATED_DIR, output_filename)
 
+    style_transfer_progress["current"] = 0
+    style_transfer_progress["total"] = 300
+    style_transfer_progress["percent"] = 0
+    style_transfer_progress["running"] = True
+
     # Run neural style transfer
     run_style_transfer(
         content_img_path=content_file,
@@ -993,6 +1010,9 @@ def style_transfer_api():
         num_steps=300,
         show_progress=True
     )
+
+    style_transfer_progress["running"] = False
+    style_transfer_progress["percent"] = 100
 
     # Save info to JSON log
     json_path = os.path.join(GENERATED_DIR, "created_art.json")
@@ -1199,6 +1219,10 @@ def run_style_transfer(content_img_path, style_img_path, output_path, num_steps=
             losses["total"].append(current_losses["total"])
             losses["content"].append(current_losses["content"])
             losses["style"].append(current_losses["style"])
+
+            # Update progress
+            style_transfer_progress["current"] = step + 1
+            style_transfer_progress["percent"] = int(((step + 1) / num_steps) * 100)
 
             if show_progress:
                 print(f"Step {step}, Total Loss: {current_losses['total']:.4f}, "
@@ -2938,4 +2962,4 @@ def recommend_clip():
 
 # TO-RUN: python app.py
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=True, threaded=True, use_reloader=False)

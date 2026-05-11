@@ -41,7 +41,7 @@ h3{
 .tab {
   flex: 1;
   min-width: 260px;
-  max-width: 320px; /* optional: prevents columns from stretching too much */
+  max-width: 360px;
   background: rgb(32, 32, 32);
   padding: 16px;
   border-radius: 12px;

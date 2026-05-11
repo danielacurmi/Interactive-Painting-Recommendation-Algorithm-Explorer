@@ -98,21 +98,16 @@
         <button id="createBtn" class="btn" disabled>Create</button>
       </div>
 
-      <div class="meta" style="margin-top:12px;">
-        <div><strong>Output filename:</strong> <span id="outName">-</span></div>
-        <div style="margin-top:6px;"><strong>Saved art JSON:</strong> created_art.json (downloaded & stored in localStorage)</div>
-      </div>
-
       <div class="result-preview" id="resultArea" style="display:none;">
         <h4>Generated result</h4>
         <img id="resultImg" alt="generated result" />
       </div>
 
       <div style="margin-top:12px;">
-        <button id="downloadJsonBtn" class="secondary">Download created_art.json</button>
+        <button id="downloadBtn" class="btn" disabled>Download Image</button>
       </div>
 
-      <div class="json-area" id="jsonArea" style="display:none;"></div>
+      <!-- <div class="json-area" id="jsonArea" style="display:none;"></div> -->
     </div>
   </div>
 
@@ -127,11 +122,18 @@
         </div>
       </div>
       <div style="margin-top:12px;">Generating stylised image…</div>
+      <div class="progress-wrapper">
+          <div id="progress">
+              <div id="bar"></div>
+          </div>
+
+          <span id="progress-text">0%</span>
+      </div>
     </div>
   </div>
 
   <!-- toast notification -->
-  <div id="toast" class="toast" role="status" aria-live="polite">Saved to Downloads & library</div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <footer>
     Note: <br>The paintings generated through this page will be added to the artwork dataset and subject to recommendation on the Home page to all users of the website. <br>Any generated artwork containing sensitive information will be entirely removed from the dataset. 

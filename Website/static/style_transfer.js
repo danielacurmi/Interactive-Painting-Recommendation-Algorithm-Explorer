@@ -22,11 +22,45 @@ document.addEventListener("DOMContentLoaded", function () {
     const resultImg = document.getElementById('resultImg');
     const outName = document.getElementById('outName');
     const jsonArea = document.getElementById('jsonArea');
-    const downloadJsonBtn = document.getElementById('downloadJsonBtn');
+    const downloadBtn = document.getElementById('downloadBtn');
+
+    const progressBar = document.getElementById("bar");
+    const progressText = document.getElementById("progress-text");
+
+    function updateProgressBar(percent) {
+        progressBar.style.width = percent + "%";
+        progressText.textContent = percent + "%";
+    }
+
+    async function pollProgress() {
+        try {
+            const response = await fetch(appPath("/style-transfer-progress"));
+
+            if (!response.ok) {
+                throw new Error("Progress endpoint failed");
+            }
+
+            const data = await response.json();
+
+            console.log(data);
+
+            updateProgressBar(data.percent);
+
+            if (data.running) {
+                setTimeout(pollProgress, 500);
+            }
+
+        } catch (err) {
+            console.error("Polling error:", err);
+        }
+    }
 
     /* State */
     let contentFile = null;
     let styleFile = null;
+
+    let latestGeneratedBlob = null;
+    let latestGeneratedFilename = null;
 
     /* Drag & drop helpers */
     function preventDefault(e) { e.preventDefault(); e.stopPropagation(); }
@@ -109,17 +143,21 @@ document.addEventListener("DOMContentLoaded", function () {
     function updateControls() {
         const ready = contentFile && styleFile;
         createBtn.disabled = !ready;
-        outName.textContent = ready ? `stylized_${Date.now()}.png` : '-';
-        jsonArea.style.display = hasCreatedArt() ? 'block' : 'none';
-        if (hasCreatedArt()) {
-            jsonArea.textContent = JSON.stringify(loadCreatedArt(), null, 2);
+        outName.textContent = ready ? `stylised_${Date.now()}.png` : '-';
+        downloadBtn.disabled = !latestGeneratedBlob;
+        if (jsonArea) {
+            jsonArea.style.display = hasCreatedArt() ? 'block' : 'none';
+
+            if (hasCreatedArt()) {
+                jsonArea.textContent = JSON.stringify(loadCreatedArt(), null, 2);
+            }
         }
     }
 
     /* Loader & Toast helpers */
     function showOverlay() { overlay.classList.add('show'); overlay.setAttribute('aria-hidden', 'false'); }
     function hideOverlay() { overlay.classList.remove('show'); overlay.setAttribute('aria-hidden', 'true'); }
-    function showToast(message = 'Saved to Downloads & library', ms = 3500) {
+    function showToast(message = 'Your Image was Generated Successfully! Click button to Download', ms = 3500) {
         toast.textContent = message;
         toast.classList.add('show');
         setTimeout(() => toast.classList.remove('show'), ms);
@@ -146,51 +184,65 @@ document.addEventListener("DOMContentLoaded", function () {
             return raw ? JSON.parse(raw) : [];
         } catch (e) { return []; }
     }
+
     function saveCreatedArt(arr) {
         localStorage.setItem(ART_KEY, JSON.stringify(arr));
     }
+
     function addCreatedArt(entry) {
         const arr = loadCreatedArt();
         arr.unshift(entry);
         saveCreatedArt(arr);
-        jsonArea.style.display = 'block';
-        jsonArea.textContent = JSON.stringify(arr, null, 2);
+        if (jsonArea) {
+            jsonArea.style.display = 'block';
+            jsonArea.textContent = JSON.stringify(arr, null, 2);
+        }
     }
 
     /* Neural Style Transfer */
     async function run_style_transfer() {
-
         try {
             createBtn.disabled = true;
+            latestGeneratedBlob = null;
+            latestGeneratedFilename = null;
+            downloadBtn.disabled = true;
 
             // send to Flask endpoint
             const formData = new FormData();
             formData.append("content", contentFile.file);
             formData.append("style", styleFile.file);
 
-            const response = await fetch(appPath("/style-transfer"), {
+            // Reset UI
+            updateProgressBar(0);
+
+            const responsePromise = fetch(appPath("/style-transfer"), {
                 method: "POST",
                 body: formData,
             });
 
-            if (!response.ok) throw new Error("NST request failed");
+            setTimeout(() => {
+                pollProgress();
+            }, 200);
 
+            const response = await responsePromise;
+            if (!response.ok) throw new Error("NST request failed");
             const result = await response.json();
 
-            // trigger download
             const downloadUrl = result.output;
-            const link = document.createElement("a");
-            link.href = downloadUrl;
-            link.download = downloadUrl.split("/").pop();
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
 
-            const blobResponse = await fetch(downloadUrl.startsWith("/") ? appPath(downloadUrl) : downloadUrl);
+            const blobResponse = await fetch(
+                downloadUrl.startsWith("/") ? appPath(downloadUrl) : downloadUrl
+            );
+
             const blob = await blobResponse.blob();
 
+            latestGeneratedBlob = blob;
+            latestGeneratedFilename = downloadUrl.split("/").pop();
+
+            downloadBtn.disabled = false;
+
             // show toast
-            showToast("Your new artwork has been created and downloaded!");
+            showToast("Your new artwork has been created!");
 
             return blob;
         } catch (err) {
@@ -225,7 +277,7 @@ document.addEventListener("DOMContentLoaded", function () {
             const blob = await run_style_transfer();
 
             // filename and download
-            const filename = `stylized_${Date.now()}.png`;
+            const filename = `stylised_${Date.now()}.png`;
             //downloadBlob(blob, filename);
 
             // display result preview
@@ -247,12 +299,7 @@ document.addEventListener("DOMContentLoaded", function () {
             };
             addCreatedArt(entry);
 
-            // also trigger download of JSON file so you have a local copy
-            //const createdArr = loadCreatedArt();
-            //const jsonBlob = new Blob([JSON.stringify(createdArr, null, 2)], { type: 'application/json' });
-            //downloadBlob(jsonBlob, 'created_art.json');
-
-            showToast('Finished! Stylized image downloaded & library updated.');
+            showToast('Finished! Stylised image can be Downloaded by clicking the button below.');
             outName.textContent = filename;
         } catch (err) {
             console.error(err);
@@ -263,13 +310,19 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     });
 
-    /* Download JSON button */
-    downloadJsonBtn.addEventListener('click', () => {
-        const arr = loadCreatedArt();
-        const blob = new Blob([JSON.stringify(arr, null, 2)], { type: 'application/json' });
-        downloadBlob(blob, 'created_art.json');
+    /* Download generated image */
+    downloadBtn.addEventListener('click', () => {
+        if (!latestGeneratedBlob) {
+            return;
+        }
+        downloadBlob(
+            latestGeneratedBlob,
+            latestGeneratedFilename || `stylised_${Date.now()}.png`
+        );
+        showToast("Image downloaded successfully!");
     });
 
     /* Show stored JSON on load */
     updateControls();
 });
+
