@@ -296,7 +296,6 @@ document.addEventListener("DOMContentLoaded", function () {
                 }
             };
             addCreatedArt(entry);
-
             showToast('Finished! Stylised image can be Downloaded by clicking the button below.');
         } catch (err) {
             console.error(err);
