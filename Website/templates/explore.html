@@ -31,6 +31,189 @@
 </head>
 
 <body data-require-user="true">
+    <!-- Trigger Button -->
+    <button id="userWeights" class="weights-btn">
+        Adjust Interaction Weights
+        <i class="fa fa-gear"></i>
+    </button>
+
+    <div id="weightsModal" class="weights-modal hidden">
+        <div class="weights-modal-content">
+            <div class="weights-header">
+                <h2>Adjust User Profile Weights</h2>
+                <button id="closeWeightsModal" class="close-modal">
+                    <i class="fa fa-times"></i>
+                </button>
+            </div>
+
+            <div class="weights-description">
+                <p id="description">
+                    The user profile is a representation of your preferences based on previous interactions with paintings 
+                    e.g., adding to favourites, skipping, ratings, and so on. While using the website explicit and implicit feedback are collected, 
+                    allowing users to indicate whether they liked/disliked recommended paintings, thereby providing 
+                    relevance judgments that support iterative model refinement. Explicit feedback involves active user engagement, providing 
+                    intentional signals about user preferences. In contrast, implicit feedback is gathered passively 
+                    by monitoring user behaviour, however it’s less precise, since interest is inferred rather than directly stated. 
+                </p>
+
+                <b>Explicit Feedback</b>
+                <ul>
+                    <li><strong>Rating:</strong> Prioritises paintings according to the rating.</li>
+                    <li><strong>Favourite:</strong> Increases recommendations similar to these artworks.</li>
+                    <li><strong>Not Interested:</strong> Reduces recommendations similar to these paintings.</li>
+                    <li><strong>Reviews:</strong> Uses written engagement as preference feedback,
+                        however this is unreliable since the user can enter both positive and negative reviews.</li>
+                </ul>
+                
+                <b>Implicit Feedback</b>
+                <ul>
+                    <li><strong>Dwell Time:</strong> The longer you view paintings indicates interest, however dwell time is capped at 1 minute.</li>
+                    <li><strong>Clicks:</strong> Uses selected paintings as an indication of interest.</li>
+                    <li><strong>Skip:</strong> Penalises ignored recommendations, according to their position in the ranked list of retrieved paintings.</li>
+                </ul>
+                <p id="description">
+                    The sliders below allow you to adjust how strongly each interaction influences your recommendations, 
+                    according to your preferred forms of feedback. 
+                </p>
+            </div>
+
+            <div class="slider-scale">
+                <div class="scale-title">Importance</div>
+
+                <div class="scale-row">
+                    <span class="scale-label left">LESS</span>
+
+                    <div class="scale-ticks">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </div>
+
+                    <span class="scale-label right">MORE</span>
+                </div>
+            </div>
+
+            <!-- Sliders -->
+            <div class="weights-sliders">
+
+                <div class="slider-group">
+                    <label for="ratingWeight">
+                        Rating
+                    </label>
+                    <div class="slider-container">
+                        <input type="range"
+                            id="ratingWeight"
+                            min="0"
+                            max="5"
+                            step="0.5"
+                            value="1.0">
+                    </div>
+                    <span class="slider-value" id="ratingWeightValue"> 1.0 </span>
+                </div>
+
+                <div class="slider-group">
+                    <label for="favouriteWeight">
+                        Favourite
+                    </label>
+                    <div class="slider-container">
+                        <input type="range"
+                            id="favouriteWeight"
+                            min="0"
+                            max="5"
+                            step="0.5"
+                            value="1.0">
+                    </div>
+                    <span class="slider-value" id="favouriteWeightValue">1.0</span>
+                </div>
+
+                <div class="slider-group">
+                    <label for="notInterestedWeight">
+                        Not Interested
+                    </label>
+                    <div class="slider-container">
+                        <input type="range"
+                            id="notInterestedWeight"
+                            min="0"
+                            max="5"
+                            step="0.5"
+                            value="1.0">
+                        </div>
+                    <span class="slider-value" id="notInterestedWeightValue">1.0</span>
+                </div>
+
+                <div class="slider-group">
+                    <label for="viewingTimeWeight">
+                        Viewing Time
+                    </label>
+                    <div class="slider-container">
+                        <input type="range"
+                            id="viewingTimeWeight"
+                            min="0"
+                            max="5"
+                            step="0.5"
+                            value="1.0">
+                    </div>
+                    <span class="slider-value" id="viewingTimeWeightValue">1.0</span>
+                </div>
+
+                <div class="slider-group">
+                    <label for="clickWeight">
+                        Clicks
+                    </label>
+                    <div class="slider-container">
+                        <input type="range"
+                            id="clickWeight"
+                            min="0"
+                            max="5"
+                            step="0.5"
+                            value="1.0">
+                    </div>
+                    <span class="slider-value" id="clickWeightValue">1.0</span>
+                </div>
+
+                <div class="slider-group">
+                    <label for="reviewWeight">
+                        Reviews
+                    </label>
+                    <div class="slider-container">
+                        <input type="range"
+                            id="reviewWeight"
+                            min="0"
+                            max="5"
+                            step="0.5"
+                            value="1.0">
+                        </div>
+                    <span class="slider-value" id="reviewWeightValue">1.0</span>
+                </div>
+
+                <div class="slider-group">
+                    <label for="skipWeight">
+                        Skip 
+                    </label>
+                    <div class="slider-container">
+                        <input type="range"
+                            id="skipWeight"
+                            min="0"
+                            max="5"
+                            step="0.5"
+                            value="1.0">
+                    </div>
+                    <span class="slider-value" id="skipWeightValue">1.0</span>
+                </div>
+
+            </div>
+
+            <!-- Footer -->
+            <div class="weights-footer">
+                <button id="saveWeightsBtn" class="save-weights-btn">
+                    Apply Preferences
+                </button>
+            </div>
+
+        </div>
+    </div>
     <h1> Painting Recommendation System </h1>
     <div class="header">
         <img src="{{ url_for('static', filename='angel1.png') }}" class="reflect">

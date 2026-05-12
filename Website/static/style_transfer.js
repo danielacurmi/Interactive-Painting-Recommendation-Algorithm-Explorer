@@ -20,7 +20,6 @@ document.addEventListener("DOMContentLoaded", function () {
     const toast = document.getElementById('toast');
     const resultArea = document.getElementById('resultArea');
     const resultImg = document.getElementById('resultImg');
-    const outName = document.getElementById('outName');
     const jsonArea = document.getElementById('jsonArea');
     const downloadBtn = document.getElementById('downloadBtn');
 
@@ -143,7 +142,6 @@ document.addEventListener("DOMContentLoaded", function () {
     function updateControls() {
         const ready = contentFile && styleFile;
         createBtn.disabled = !ready;
-        outName.textContent = ready ? `stylised_${Date.now()}.png` : '-';
         downloadBtn.disabled = !latestGeneratedBlob;
         if (jsonArea) {
             jsonArea.style.display = hasCreatedArt() ? 'block' : 'none';
@@ -300,7 +298,6 @@ document.addEventListener("DOMContentLoaded", function () {
             addCreatedArt(entry);
 
             showToast('Finished! Stylised image can be Downloaded by clicking the button below.');
-            outName.textContent = filename;
         } catch (err) {
             console.error(err);
             alert('An error occurred while creating the stylised image. ');
