@@ -1917,6 +1917,110 @@ def generate_concept_thumbnail(concept_type, label):
         cursor.close()
         conn.close()
 
+# Adjustable User Profile Weights 
+@app.route("/api/store_weights", methods=["POST"])
+def store_weights():
+    data = request.json
+    user_id = data["user_id"]
+
+    if not user_id:
+        return jsonify({"error": "Missing user_id"}), 400
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    query = """
+    INSERT INTO user_interaction_weights (
+        user_id,
+        rating_weight,
+        favourite_weight,
+        not_interested_weight,
+        viewing_time_weight,
+        click_weight,
+        review_weight,
+        skip_weight
+    )
+    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+    ON CONFLICT (user_id)
+    DO UPDATE SET
+        rating_weight = EXCLUDED.rating_weight,
+        favourite_weight = EXCLUDED.favourite_weight,
+        not_interested_weight = EXCLUDED.not_interested_weight,
+        viewing_time_weight = EXCLUDED.viewing_time_weight,
+        click_weight = EXCLUDED.click_weight,
+        review_weight = EXCLUDED.review_weight,
+        skip_weight = EXCLUDED.skip_weight,
+        updated_at = NOW();
+    """
+
+    cur.execute(query, (
+        user_id,
+        data["rating"],
+        data["favourite"],
+        data["not_interested"],
+        data["viewing_time"],
+        data["click"],
+        data["review"],
+        data["skip"]
+    ))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    return jsonify({"status": "success"})
+
+@app.route("/api/get_weights", methods=["POST"])
+def get_weights():
+    data = request.get_json()
+    user_id = data.get("user_id")
+
+    if not user_id:
+        return jsonify({"error": "Missing user_id"}), 400
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT
+            rating_weight,
+            favourite_weight,
+            not_interested_weight,
+            viewing_time_weight,
+            click_weight,
+            review_weight,
+            skip_weight
+        FROM user_interaction_weights
+        WHERE user_id = %s
+    """, (user_id,))
+
+    row = cur.fetchone()
+
+    cur.close()
+    conn.close()
+
+    if not row:
+        # return defaults if user has no row yet
+        return jsonify({
+            "rating": 1.0,
+            "favourite": 1.0,
+            "not_interested": 1.0,
+            "viewing_time": 1.0,
+            "click": 1.0,
+            "review": 1.0,
+            "skip": 1.0
+        })
+
+    return jsonify({
+        "rating": row[0],
+        "favourite": row[1],
+        "not_interested": row[2],
+        "viewing_time": row[3],
+        "click": row[4],
+        "review": row[5],
+        "skip": row[6]
+    })
+
 # User-Profile Creation
 # Create a weighted user profile vector based on interactions or cold start if new user
 DEFAULT_INTERACTION_WEIGHTS = {
@@ -2006,6 +2110,47 @@ def compute_interaction_weight(interaction, weights):
     weight = apply_temporal_decay(weight, interaction_time)
 
     return weight
+
+def fetch_user_weights(user_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT
+            rating_weight,
+            favourite_weight,
+            not_interested_weight,
+            viewing_time_weight,
+            click_weight,
+            review_weight,
+            skip_weight
+        FROM user_interaction_weights
+        WHERE user_id = %s
+    """, (user_id,))
+
+    row = cur.fetchone()
+
+    cur.close()
+    conn.close()
+
+    if not row:
+        return None
+
+    return {
+        "rating_weight": row[0],
+        "favourite_weight": row[1],
+        "not_interested_weight": row[2],
+        "viewing_time_weight": row[3],
+        "click_weight": row[4],
+        "review_weight": row[5],
+        "skip_weight": row[6]
+    }
+
+def get_user_weights(user_id):
+    user_weights = fetch_user_weights(user_id)
+    if not user_weights:
+        return DEFAULT_INTERACTION_WEIGHTS
+    return user_weights
 
 # ResNet50
 # Preprocess images the same way as they were trained on ImageNet
@@ -2109,11 +2254,12 @@ def recommend_resnet():
     k = data.get("k", 10)
 
     request_id = generate_request_id()
+    weights = get_user_weights(user_id)
 
     # Build user scores
     interactions = fetch_user_interactions(user_id)
     for i in interactions:
-        i["weight"] = compute_interaction_weight(i, DEFAULT_INTERACTION_WEIGHTS)
+        i["weight"] = compute_interaction_weight(i, weights)
 
     scores = score_paintings_from_interactions(interactions, resnet_norm, id_to_idx)
 
@@ -2292,10 +2438,11 @@ def recommend_sbert():
         
     k = data.get("k", 10) 
     request_id = generate_request_id() 
+    weights = get_user_weights(user_id)
     interactions = fetch_sbert_user_interactions(user_id) 
     
     for i in interactions: 
-        i["weight"] = compute_interaction_weight(i, DEFAULT_INTERACTION_WEIGHTS) 
+        i["weight"] = compute_interaction_weight(i, weights) 
 
     positive_profiles = {}
     negative_profiles = {}
@@ -2785,11 +2932,12 @@ def recommend_clip():
 
         k = data.get("k", 10)
         request_id = generate_request_id()
+        weights = get_user_weights(user_id)
 
         # Fetch interactions
         interactions = fetch_clip_user_interactions(user_id)
         for i in interactions:
-            i["weight"] = compute_interaction_weight(i, DEFAULT_INTERACTION_WEIGHTS)
+            i["weight"] = compute_interaction_weight(i, weights)
 
         # Build CLIP user profiles
         profiles = build_clip_user_profile(interactions, image_matrix, text_matrix, painting_id_to_index)

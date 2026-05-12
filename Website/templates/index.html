@@ -79,6 +79,24 @@
                 </p>
             </div>
 
+            <div class="slider-scale">
+                <div class="scale-title">Importance</div>
+
+                <div class="scale-row">
+                    <span class="scale-label left">LESS</span>
+
+                    <div class="scale-ticks">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </div>
+
+                    <span class="scale-label right">MORE</span>
+                </div>
+            </div>
+
             <!-- Sliders -->
             <div class="weights-sliders">
 
@@ -86,25 +104,29 @@
                     <label for="ratingWeight">
                         Rating
                     </label>
-                    <input type="range"
-                        id="ratingWeight"
-                        min="0"
-                        max="5"
-                        step="0.5"
-                        value="1.0">
-                    <span class="slider-value" id="ratingWeightValue">1.0</span>
+                    <div class="slider-container">
+                        <input type="range"
+                            id="ratingWeight"
+                            min="0"
+                            max="5"
+                            step="0.5"
+                            value="1.0">
+                    </div>
+                    <span class="slider-value" id="ratingWeightValue"> 1.0 </span>
                 </div>
 
                 <div class="slider-group">
                     <label for="favouriteWeight">
                         Favourite
                     </label>
-                    <input type="range"
-                        id="favouriteWeight"
-                        min="0"
-                        max="5"
-                        step="0.5"
-                        value="1.0">
+                    <div class="slider-container">
+                        <input type="range"
+                            id="favouriteWeight"
+                            min="0"
+                            max="5"
+                            step="0.5"
+                            value="1.0">
+                    </div>
                     <span class="slider-value" id="favouriteWeightValue">1.0</span>
                 </div>
 
@@ -112,12 +134,14 @@
                     <label for="notInterestedWeight">
                         Not Interested
                     </label>
-                    <input type="range"
-                        id="notInterestedWeight"
-                        min="0"
-                        max="5"
-                        step="0.5"
-                        value="1.0">
+                    <div class="slider-container">
+                        <input type="range"
+                            id="notInterestedWeight"
+                            min="0"
+                            max="5"
+                            step="0.5"
+                            value="1.0">
+                        </div>
                     <span class="slider-value" id="notInterestedWeightValue">1.0</span>
                 </div>
 
@@ -125,25 +149,29 @@
                     <label for="viewingTimeWeight">
                         Viewing Time
                     </label>
-                    <input type="range"
-                        id="viewingTimeWeight"
-                        min="0"
-                        max="5"
-                        step="0.5"
-                        value="1.0">
-                        <span class="slider-value" id="viewingTimeWeightValue">1.0</span>
+                    <div class="slider-container">
+                        <input type="range"
+                            id="viewingTimeWeight"
+                            min="0"
+                            max="5"
+                            step="0.5"
+                            value="1.0">
+                    </div>
+                    <span class="slider-value" id="viewingTimeWeightValue">1.0</span>
                 </div>
 
                 <div class="slider-group">
                     <label for="clickWeight">
                         Clicks
                     </label>
-                    <input type="range"
-                        id="clickWeight"
-                        min="0"
-                        max="5"
-                        step="0.5"
-                        value="1.0">
+                    <div class="slider-container">
+                        <input type="range"
+                            id="clickWeight"
+                            min="0"
+                            max="5"
+                            step="0.5"
+                            value="1.0">
+                    </div>
                     <span class="slider-value" id="clickWeightValue">1.0</span>
                 </div>
 
@@ -151,25 +179,29 @@
                     <label for="reviewWeight">
                         Reviews
                     </label>
-                    <input type="range"
-                        id="reviewWeight"
-                        min="0"
-                        max="5"
-                        step="0.5"
-                        value="1.0">
+                    <div class="slider-container">
+                        <input type="range"
+                            id="reviewWeight"
+                            min="0"
+                            max="5"
+                            step="0.5"
+                            value="1.0">
+                        </div>
                     <span class="slider-value" id="reviewWeightValue">1.0</span>
                 </div>
 
                 <div class="slider-group">
                     <label for="skipWeight">
-                        Skip Penalty
+                        Skip 
                     </label>
-                    <input type="range"
-                        id="skipWeight"
-                        min="0"
-                        max="5"
-                        step="0.5"
-                        value="1.0">
+                    <div class="slider-container">
+                        <input type="range"
+                            id="skipWeight"
+                            min="0"
+                            max="5"
+                            step="0.5"
+                            value="1.0">
+                    </div>
                     <span class="slider-value" id="skipWeightValue">1.0</span>
                 </div>
 

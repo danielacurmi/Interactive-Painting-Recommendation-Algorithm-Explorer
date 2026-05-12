@@ -1,5 +1,6 @@
 document.addEventListener("DOMContentLoaded", async () => {
     await initSession();
+    await loadWeights();
 });
 
 async function initSession() {
@@ -117,10 +118,10 @@ sliders.forEach(slider => {
     });
 });
 
-
 // Save button
 document.getElementById("saveWeightsBtn")
-.addEventListener("click", () => {
+.addEventListener("click", async () => {
+    const user_id = localStorage.getItem("user_id");
 
     const weights = {
         rating: parseFloat(document.getElementById("ratingWeight").value),
@@ -129,13 +130,68 @@ document.getElementById("saveWeightsBtn")
         viewing_time: parseFloat(document.getElementById("viewingTimeWeight").value),
         click: parseFloat(document.getElementById("clickWeight").value),
         review: parseFloat(document.getElementById("reviewWeight").value),
-        skip: parseFloat(document.getElementById("skipWeight").value)
+        skip: parseFloat(document.getElementById("skipWeight").value),
+        user_id: user_id
     };
 
     console.log("Selected weights:", weights);
 
-    // future:
-    // send to backend API
+    try {
+        const response = await fetch(window.appPath("/api/store_weights"), {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(weights)
+        });
 
-    weightsModal.classList.add("hidden");
+        if (!response.ok) {
+            throw new Error("Failed to save weights");
+        }
+
+        console.log("Weights saved successfully");
+        weightsModal.classList.add("hidden");
+
+    } catch (err) {
+        console.error("Error saving weights:", err);
+    }
 });
+
+async function loadWeights() {
+    const user_id = localStorage.getItem("user_id");
+    if (!user_id) return;
+
+    try {
+        const res = await fetch(window.appPath("/api/get_weights"), {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ user_id })
+        });
+
+        if (!res.ok) throw new Error("Failed to load weights");
+
+        const data = await res.json();
+
+        // update sliders
+        document.getElementById("ratingWeight").value = data.rating;
+        document.getElementById("favouriteWeight").value = data.favourite;
+        document.getElementById("notInterestedWeight").value = data.not_interested;
+        document.getElementById("viewingTimeWeight").value = data.viewing_time;
+        document.getElementById("clickWeight").value = data.click;
+        document.getElementById("reviewWeight").value = data.review;
+        document.getElementById("skipWeight").value = data.skip;
+
+        // update labels
+        document.querySelectorAll(".slider-group input").forEach(slider => {
+            const valueLabel = document.getElementById(slider.id + "Value");
+            if (valueLabel) valueLabel.textContent = slider.value;
+        });
+
+        console.log("Weights loaded:", data);
+
+    } catch (err) {
+        console.error("Error loading weights:", err);
+    }
+}
