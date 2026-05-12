@@ -2021,6 +2021,17 @@ def get_weights():
         "skip": row[6]
     })
 
+def normalise_weight_names(db_weights):
+    return {
+    "rating": float(db_weights["rating_weight"]),
+    "favourite": float(db_weights["favourite_weight"]),
+    "not_interested": float(db_weights["not_interested_weight"]),
+    "viewing_time": float(db_weights["viewing_time_weight"]),
+    "click": float(db_weights["click_weight"]),
+    "review": float(db_weights["review_weight"]),
+    "skip": float(db_weights["skip_weight"])
+}
+
 # User-Profile Creation
 # Create a weighted user profile vector based on interactions or cold start if new user
 DEFAULT_INTERACTION_WEIGHTS = {
@@ -2254,7 +2265,7 @@ def recommend_resnet():
     k = data.get("k", 10)
 
     request_id = generate_request_id()
-    weights = get_user_weights(user_id)
+    weights = normalise_weight_names(get_user_weights(user_id))
 
     # Build user scores
     interactions = fetch_user_interactions(user_id)
@@ -2438,7 +2449,7 @@ def recommend_sbert():
         
     k = data.get("k", 10) 
     request_id = generate_request_id() 
-    weights = get_user_weights(user_id)
+    weights = normalise_weight_names(get_user_weights(user_id))
     interactions = fetch_sbert_user_interactions(user_id) 
     
     for i in interactions: 
@@ -2932,7 +2943,7 @@ def recommend_clip():
 
         k = data.get("k", 10)
         request_id = generate_request_id()
-        weights = get_user_weights(user_id)
+        weights = normalise_weight_names(get_user_weights(user_id))
 
         # Fetch interactions
         interactions = fetch_clip_user_interactions(user_id)
