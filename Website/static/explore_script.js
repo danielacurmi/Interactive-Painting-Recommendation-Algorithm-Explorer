@@ -83,6 +83,38 @@ function initRecommendations() {
                         isColdStartPhase = false; // switch to recommendations after first batch
                     }
                 } 
+                else if(isClipRecommendationMode){
+                    console.log("Fetching recommendations using CLIP ...");
+                    const response = await fetch(
+                        window.appPath(`/api/recommend_clip`),
+                        {
+                            method: "POST",
+                            headers: {
+                                "Content-Type": "application/json"
+                            },
+                            body: JSON.stringify({
+                                user_id: parseInt(user_id),
+                                session_id: parseInt(session_id),
+                                k: 10
+                            })
+                        }
+                    );
+
+                    console.log(response)
+
+                    const data = await response.json();
+
+                    if (data.recommendations) {
+
+                        images = data.recommendations;
+                        currentRequestId = data.request_id;
+
+                    } else {
+
+                        console.error("No CLIP recommendations returned");
+                        images = [];
+                    }
+                }
                 else {
                     console.log("Fetching recommendations using SBERT ...");
 
