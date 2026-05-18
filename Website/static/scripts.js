@@ -135,7 +135,7 @@ function initRecommendations() {
                         body: JSON.stringify({
                             user_id: parseInt(user_id),
                             session_id: parseInt(session_id),
-                            k: 10
+                            k: 20
                         })
                     });
 
