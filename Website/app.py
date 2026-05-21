@@ -2180,7 +2180,7 @@ embeddings_resnet = data['embeddings']
 image_ids_resnet = data['image_ids']
 embeddings_resnet_norm = embeddings_resnet / np.linalg.norm(embeddings_resnet, axis=1, keepdims=True)
 
-pcaRESNET = PCA(n_components=512) 
+pcaRESNET = PCA(n_components=382) 
 pca_resnet = pcaRESNET.fit_transform(embeddings_resnet_norm)
 resnet_norm = pca_resnet / np.linalg.norm(pca_resnet, axis=1, keepdims=True)
 
